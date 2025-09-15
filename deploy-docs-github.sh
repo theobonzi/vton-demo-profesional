@@ -3,12 +3,6 @@
 # Deploy Documentation to GitHub Pages
 echo "🚀 Deploying VTON Demo Professional Documentation to GitHub Pages..."
 
-# Check if mkdocs is installed
-if ! command -v mkdocs &> /dev/null; then
-    echo "📦 Installing MkDocs and Material theme..."
-    pip install mkdocs mkdocs-material mkdocs-git-revision-date-localized-plugin
-fi
-
 # Check if we're in a git repository
 if [ ! -d ".git" ]; then
     echo "❌ Not in a git repository. Please run 'git init' first."
@@ -20,6 +14,17 @@ if ! git remote get-url origin &> /dev/null; then
     echo "❌ No remote origin found. Please add your GitHub repository:"
     echo "   git remote add origin https://github.com/YOUR_USERNAME/vton-demo-professional.git"
     exit 1
+fi
+
+# Setup virtual environment if it doesn't exist
+if [ ! -d "docs-env" ]; then
+    echo "📦 Creating virtual environment for documentation..."
+    python3 -m venv docs-env
+    source docs-env/bin/activate
+    pip install mkdocs mkdocs-material
+else
+    echo "🔧 Activating existing virtual environment..."
+    source docs-env/bin/activate
 fi
 
 echo "🔨 Building documentation site..."
@@ -44,6 +49,7 @@ if [ $? -eq 0 ]; then
         echo "   3. Changes will be live in a few minutes"
     else
         echo "❌ Deployment failed. Check your GitHub repository settings."
+        echo "   Make sure GitHub Pages is enabled in repository Settings > Pages"
     fi
 else
     echo "❌ Build failed. Check your mkdocs.yml configuration."

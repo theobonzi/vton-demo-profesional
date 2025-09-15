@@ -482,3 +482,6 @@ cypress/screenshots/
 *.psd
 *.ai
 *.sketch
+
+# Documentation virtual environment
+docs-env/

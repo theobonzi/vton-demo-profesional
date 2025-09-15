@@ -1,7 +1,7 @@
 site_name: VTON Demo Professional
 site_description: Virtual Try-On Demo Professional Documentation
 site_author: Development Team
-site_url: https://yourusername.github.io/vton-docs
+site_url: https://yourusername.github.io/vton-demo-professional/
 
 theme:
   name: material
@@ -30,7 +30,7 @@ theme:
     - content.code.annotate
 
 nav:
-  - Home: README.md
+  - Home: index.md
   - API Documentation: API.md
   - Backend: backend/README.md
   - Frontend: frontend/README.md
@@ -38,8 +38,6 @@ nav:
 
 plugins:
   - search
-  - git-revision-date-localized:
-      enable_creation_date: true
 
 markdown_extensions:
   - pymdownx.highlight:
