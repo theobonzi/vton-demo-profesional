@@ -1,0 +1,73 @@
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from app.schemas.tryon import TryOnRequest, TryOnResponse, TryOnSessionResponse
+from app.api.auth import get_current_user
+from typing import Optional
+import uuid
+import asyncio
+
+router = APIRouter()
+
+@router.post("/", response_model=TryOnResponse)
+async def create_try_on(
+    request: TryOnRequest,
+    background_tasks: BackgroundTasks,
+    ):
+current_user: Optional[dict] = Depends(get_current_user)
+    """Créer un essayage virtuel (FAKE pour la démo)"""
+    try:
+        # Générer un ID de session
+        session_id = request.session_id or str(uuid.uuid4())
+        
+        # Simuler un traitement en arrière-plan
+        background_tasks.add_task(simulate_try_on_processing, session_id, request)
+        
+        return TryOnResponse(
+            session_id=session_id,
+            status="processing",
+            message="Essayage virtuel en cours de traitement..."
+        )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/{session_id}/status", response_model=TryOnSessionResponse)
+async def get_try_on_status(
+    session_id: str,
+    ):
+current_user: Optional[dict] = Depends(get_current_user)
+    """Récupérer le statut d'un essayage virtuel"""
+    try:
+        # Pour la démo, on simule que le traitement est terminé après quelques secondes
+        # En réalité, vous vérifieriez le statut dans la base de données
+        
+        # Simuler un délai de traitement
+        await asyncio.sleep(2)
+        
+        # Retourner un résultat fake avec l'image du vêtement
+        fake_results = {
+            "product_1": {
+                "product_id": 1,
+                "product_name": "Vêtement Test",
+                "result_image": "https://pzqzhljhfistuwxcjzjs.supabase.co/storage/v1/object/sign/tryon-inputs/clothing/f52feb62877cc7e356e1dcb1efaea4af141a88501289d45e51d9690e21a15315.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9iNjE2ZjVhYy1iZGZjLTQ4ODMtOWFjNS05YThmZTZkMzgwNjYiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJ0cnlvbi1pbnB1dHMvY2xvdGhpbmcvZjUyZmViNjI4NzdjYzdlMzU2ZTFkY2IxZWZhZWE0YWYxNDFhODg1MDEyODlkNDVlNTFkOTY5MGUyMWExNTMxNS5wbmciLCJpYXQiOjE3NTc1MDY4MjUsImV4cCI6MTc1NzU5MzIyNX0.ETq6Ewf-_-35fy6ztWZNSJwNyDnE8t1QeDWGZwjCZys",
+                "status": "success"
+            }
+        }
+        
+        return TryOnSessionResponse(
+            session_id=session_id,
+            status="completed",
+            results=fake_results,
+            message="Essayage virtuel terminé avec succès"
+        )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+async def simulate_try_on_processing(session_id: str, request: TryOnRequest):
+    """Simuler le traitement d'essayage virtuel en arrière-plan"""
+    # Simuler un délai de traitement
+    await asyncio.sleep(3)
+    
+    # Ici, en réalité, vous appelleriez l'API FASHN.ai
+    # Pour la démo, on ne fait rien de spécial
+    print(f"Traitement simulé terminé pour la session {session_id}")

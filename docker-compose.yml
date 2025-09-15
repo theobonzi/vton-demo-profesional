@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  # Base de données PostgreSQL
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: vton_demo
+      POSTGRES_USER: vton_user
+      POSTGRES_PASSWORD: vton_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vton_user -d vton_demo"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend Python FastAPI
+  backend:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql://vton_user:vton_password@db:5432/vton_demo
+      FASHN_API_KEY: ${FASHN_API_KEY}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      SECRET_KEY: ${SECRET_KEY:-your-secret-key-change-in-production}
+      FRONTEND_URL: http://localhost:3000
+      DEFAULT_BRAND: ${DEFAULT_BRAND:-}
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Frontend React
+  frontend:
+    build: ./frontend
+    environment:
+      VITE_DEFAULT_BRAND: ${DEFAULT_BRAND:-}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    command: npm run dev -- --host 0.0.0.0
+
+volumes:
+  postgres_data:
