@@ -1,8 +1,9 @@
 import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Camera, Upload } from "lucide-react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate, useLocation, Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
+import { useAuthStore } from "@/store/useAuthStore";
 
 export default function SelfieCapture() {
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
@@ -225,6 +226,15 @@ export default function SelfieCapture() {
           </div>
         </div>
       </main>
+      {/* Auth CTA */}
+      {!useAuthStore.getState().isAuthenticated && (
+        <div className="px-6 pb-8 text-center text-sm text-muted-foreground">
+          Vous avez un compte ?
+          <Link to="/login" className="ml-1 underline">Se connecter</Link>
+          {' '}•{' '}
+          <Link to="/register" className="underline">Créer un compte</Link>
+        </div>
+      )}
     </div>
   );
 }

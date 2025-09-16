@@ -65,3 +65,21 @@ export async function waitForTryOnCompletion(
   
   throw new Error('Timeout: Essayage virtuel non terminé dans le délai imparti');
 }
+
+export interface SummaryItemPayload {
+  product_id: number;
+  name: string;
+  price?: string;
+  brand?: string;
+  image_url?: string;
+  result_image_url?: string;
+}
+
+export async function sendSummaryEmail(email: string, sessionId: string | undefined, items: SummaryItemPayload[]) {
+  const response = await api.post('/tryon/send-summary', {
+    email,
+    session_id: sessionId,
+    items,
+  });
+  return response.data as { status: string; message: string };
+}

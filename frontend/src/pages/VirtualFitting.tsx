@@ -1,8 +1,11 @@
 import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Heart, Download, Share2 } from "lucide-react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate, useLocation, Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
+import { useAuthStore } from "@/store/useAuthStore";
+import { sendSummaryEmail } from "@/services/tryOnService";
+import { toast } from "sonner";
 
 export default function VirtualFitting() {
   const [likedItems, setLikedItems] = useState<Set<number>>(new Set());
@@ -12,6 +15,9 @@ export default function VirtualFitting() {
   const navigate = useNavigate();
   const location = useLocation();
   const { selectedProducts, productConfigs, personImage, results, sessionId } = location.state || {};
+  const userEmail = useAuthStore((s) => s.user?.email || "");
+  const [email, setEmail] = useState(userEmail);
+  const [sending, setSending] = useState(false);
 
   useEffect(() => {
     if (!hasLoggedRef.current) {
@@ -58,6 +64,39 @@ export default function VirtualFitting() {
     } else {
       navigator.clipboard.writeText(imageUrl);
       alert('URL copiée dans le presse-papiers !');
+    }
+  };
+
+  const normalizedResults = Array.isArray(results)
+    ? results
+    : results
+      ? Object.values(results)
+      : [];
+
+  const onSendSummary = async () => {
+    if (!email) {
+      toast.error('Veuillez saisir un email');
+      return;
+    }
+    try {
+      setSending(true);
+      const items = (productConfigs || []).map((p: any) => {
+        const match = normalizedResults.find((r: any) => r.product_name === p.name || r.product_id === p.id);
+        return {
+          product_id: p.id,
+          name: p.name,
+          brand: p.brand,
+          price: p.price,
+          image_url: p.displayImage,
+          result_image_url: match?.result_image || p.apiImage,
+        };
+      });
+      await sendSummaryEmail(email, sessionId, items);
+      toast.success('Résumé envoyé par email');
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || e?.message || 'Échec de l\'envoi');
+    } finally {
+      setSending(false);
     }
   };
 
@@ -183,6 +222,24 @@ export default function VirtualFitting() {
           </div>
         </div>
 
+        {/* Email summary */}
+        <div className="bg-card rounded-lg p-6 mb-12">
+          <h3 className="text-lg font-medium text-foreground mb-2">Recevoir mon résumé par email</h3>
+          <p className="text-text-subtle mb-4">Saisissez votre adresse email pour recevoir la liste des produits essayés.</p>
+          <div className="flex flex-col sm:flex-row gap-3 max-w-xl">
+            <input
+              type="email"
+              placeholder="votre@email.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="flex-1 border rounded px-3 py-2"
+            />
+            <Button onClick={onSendSummary} disabled={sending}>
+              {sending ? 'Envoi...' : 'Envoyer le résumé'}
+            </Button>
+          </div>
+        </div>
+
         {sessionId && (
           <div className="text-center">
             <p className="text-xs text-text-subtle">
@@ -191,6 +248,15 @@ export default function VirtualFitting() {
           </div>
         )}
       </main>
+      {/* Auth CTA */}
+      {!useAuthStore.getState().isAuthenticated && (
+        <div className="px-6 pb-8 text-center text-sm text-muted-foreground">
+          Vous avez un compte ?
+          <Link to="/login" className="ml-1 underline">Se connecter</Link>
+          {' '}•{' '}
+          <Link to="/register" className="underline">Créer un compte</Link>
+        </div>
+      )}
 
       {fullscreenImage && (
         <div

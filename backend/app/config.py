@@ -26,6 +26,15 @@ class Settings(BaseSettings):
     app_name: str = "VTON Demo Professional"
     app_version: str = "1.0.0"
     debug: bool = True
+
+    # SMTP (for emailing summaries)
+    smtp_host: Optional[str] = None
+    smtp_port: Optional[int] = None
+    smtp_user: Optional[str] = None
+    smtp_password: Optional[str] = None
+    smtp_from: Optional[str] = None
+    smtp_use_tls: bool = True
+    smtp_use_ssl: bool = False
     
     class Config:
         env_file = ".env"
