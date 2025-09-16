@@ -13,6 +13,14 @@ export interface Product {
   created_at: string;
 }
 
+export interface ProductConfiguration {
+  id: number;
+  name: string;
+  price: string;
+  displayImage: string;
+  apiImage: string;
+}
+
 // Types pour les utilisateurs
 export interface User {
   id: number;
@@ -94,4 +102,12 @@ export interface SelectedProduct {
   brand: string;
   image_url: string;
   api_image_url: string;
+}
+
+export interface ExperienceState {
+  selectedProducts: number[];
+  productConfigs: ProductConfiguration[];
+  personImage?: string;
+  results?: TryOnResult[];
+  sessionId?: string;
 }

@@ -42,6 +42,8 @@ All colors MUST be HSL.
     --surface-hover: 35 8% 90%;
     --text-subtle: 25 5% 55%;
     --brand-accent: 45 15% 75%;
+    --luxury-gold: 38 67% 55%;
+    --luxury-deep: 20 18% 18%;
     
     /* Elegant transitions */
     --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -100,6 +102,51 @@ All colors MUST be HSL.
   }
 
   body {
-    @apply bg-background text-foreground;
+    font-family: "Plus Jakarta Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    @apply text-foreground;
+    background-color: hsl(var(--background));
+    background-image:
+      radial-gradient(circle at top, hsla(35, 55%, 92%, 0.95), transparent 60%),
+      radial-gradient(circle at 20% 20%, hsla(40, 50%, 85%, 0.55), transparent 45%),
+      radial-gradient(circle at 80% 0%, hsla(30, 40%, 82%, 0.45), transparent 45%);
+    background-attachment: fixed;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: "Playfair Display", "Times New Roman", serif;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+  }
+
+  ::selection {
+    background: hsl(var(--luxury-gold) / 0.25);
+    color: hsl(var(--luxury-deep));
+  }
+}
+
+@layer components {
+  .luxury-card {
+    @apply rounded-[24px] border border-white/30 bg-white/65 backdrop-blur-2xl shadow-[0_32px_80px_-50px_rgba(58,43,28,0.55)];
+  }
+
+  .luxury-pill {
+    @apply inline-flex items-center gap-2 rounded-full border border-white/40 bg-white/60 px-4 py-2 text-[10px] uppercase tracking-[0.45em] text-foreground/70;
+  }
+
+  .luxury-section-title {
+    @apply text-xs uppercase tracking-[0.45em] text-foreground/50;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
   }
 }
