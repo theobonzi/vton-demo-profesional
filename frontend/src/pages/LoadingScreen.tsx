@@ -2,16 +2,18 @@ import { useEffect, useState, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { createTryOn, waitForTryOnCompletion } from "@/services/tryOnService";
+import { useAuthStore } from "@/store/useAuthStore";
 
 export default function LoadingScreen() {
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState("Initialisation...");
   const [isProcessing, setIsProcessing] = useState(false);
   const hasStartedRef = useRef(false);
-  
+
   const navigate = useNavigate();
   const location = useLocation();
   const { selectedProducts, productConfigs, personImage } = location.state || {};
+  const userEmail = useAuthStore((state) => state.user?.email);
 
   useEffect(() => {
     if (hasStartedRef.current || isProcessing) {
@@ -35,18 +37,20 @@ export default function LoadingScreen() {
         setProgress(20);
         setStatus("Préparation des données...");
         
-        const products_info = productConfigs?.map(config => ({
+        const products_info = productConfigs?.map((config: any) => ({
           id: parseInt(config.id),
           name: config.name,
           price: config.price,
-          image_url: config.displayImage
+          image_url: config.displayImage,
+          description: config.description,
         })) || [];
-        
+
         const tryOnRequest = {
           person_image_url: personImage,
           product_ids: selectedProducts,
           products_info: products_info,
-          session_id: `session_${Date.now()}`
+          session_id: `session_${Date.now()}`,
+          email: userEmail || undefined
         };
 
         setProgress(30);

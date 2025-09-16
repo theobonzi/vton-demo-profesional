@@ -11,7 +11,7 @@ export default function VirtualFitting() {
   
   const navigate = useNavigate();
   const location = useLocation();
-  const { selectedProducts, productConfigs, personImage, results, sessionId } = location.state || {};
+  const { personImage, results, sessionId } = location.state || {};
 
   useEffect(() => {
     if (!hasLoggedRef.current) {
@@ -113,7 +113,12 @@ export default function VirtualFitting() {
                 <h3 className="font-medium text-foreground text-base mb-3 line-clamp-2">
                   {result.product_name}
                 </h3>
-                
+                {result.product_description && (
+                  <p className="text-sm text-text-subtle mb-3 line-clamp-2">
+                    {result.product_description}
+                  </p>
+                )}
+
                 <div className="flex gap-2">
                   <Button
                     variant="ghost"

@@ -5,6 +5,7 @@ export interface ProductInfo {
   name: string;
   price: string;
   image_url: string;
+  description?: string;
 }
 
 export interface TryOnRequest {
@@ -12,11 +13,14 @@ export interface TryOnRequest {
   product_ids: number[];
   products_info?: ProductInfo[];
   session_id?: string;
+  email?: string;
 }
 
 export interface TryOnResult {
   product_id: number;
   product_name: string;
+  product_description?: string;
+  product_price?: string;
   result_image?: string;
   error?: string;
   status: 'success' | 'failed';
