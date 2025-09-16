@@ -122,6 +122,8 @@ vton-demo-professional/
 ```bash
 cd frontend
 npm install
+# Required for authentication
+npm install @supabase/supabase-js
 npm run dev
 ```
 
@@ -143,6 +145,39 @@ uvicorn app.main:app --reload
 | `GEMINI_API_KEY` | Google Gemini API key | Yes |
 | `SECRET_KEY` | JWT secret key | Yes |
 | `DEFAULT_BRAND` | Default brand filter (optional) | No |
+| `SMTP_HOST` | SMTP server host | Optional |
+| `SMTP_PORT` | SMTP server port | Optional |
+| `SMTP_USER` | SMTP username | Optional |
+| `SMTP_PASSWORD` | SMTP password | Optional |
+| `SMTP_FROM` | From email address | Optional |
+| `SMTP_USE_TLS` | Enable STARTTLS (default: True) | Optional |
+| `SMTP_USE_SSL` | Use SSL instead of TLS (default: False) | Optional |
+
+### Frontend Env (Vite)
+
+Create `frontend/.env` from `frontend/.env.example`:
+
+```
+VITE_SUPABASE_URL=your_supabase_project_url
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+VITE_DEFAULT_BRAND=LEMAIRE # optional
+```
+
+### Email Summary Setup
+
+To enable emailing session summaries, configure SMTP in `backend/.env`:
+
+```
+SMTP_HOST=smtp.mailprovider.com
+SMTP_PORT=587
+SMTP_USER=your_smtp_username
+SMTP_PASSWORD=your_smtp_password
+SMTP_FROM=no-reply@yourdomain.com
+SMTP_USE_TLS=True
+SMTP_USE_SSL=False
+```
+
+Then restart the backend. A new button appears on the Virtual Fitting page to send a summary to any email address (pre-filled if logged in).
 
 ## 📱 API Endpoints
 
@@ -153,10 +188,19 @@ uvicorn app.main:app --reload
 ### Virtual Try-On
 - `POST /api/v1/tryon/` - Create virtual try-on session
 - `GET /api/v1/tryon/{session_id}/status/` - Get try-on status
+- `POST /api/v1/tryon/send-summary` - Send email summary of a try-on session
 
 ### Authentication
-- `POST /api/v1/auth/login` - User login
-- `POST /api/v1/auth/register` - User registration
+
+Authentication is handled directly on the frontend with Supabase Auth.
+
+- Login/Signup via Supabase using `@supabase/supabase-js`
+- Session token is stored in `localStorage` as `token`
+- The Axios client attaches the Bearer token for API calls
+
+Routes added:
+- `/login` – user login page
+- `/register` – user signup page
 
 ## 🎨 UI Components
 

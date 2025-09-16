@@ -7,6 +7,8 @@ import { cn } from "@/lib/utils";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useProductStore } from "@/store/useProductStore";
+import { useAuthStore } from "@/store/useAuthStore";
+import { Link } from "react-router-dom";
 
 export default function ProductSelection() {
   const [selectedProducts, setSelectedProducts] = useState<number[]>([]);
@@ -78,6 +80,7 @@ export default function ProductSelection() {
       const productConfigs = picked.map((p) => ({
         id: p.id,
         name: p.name,
+        brand: p.brand,
         price: `${p.price.toFixed(2)} €`,
         displayImage: p.image_url,
         apiImage: p.api_image_url || p.image_url,
@@ -237,6 +240,16 @@ export default function ProductSelection() {
             <ArrowRight className="ml-2 w-4 h-4" />
           </Button>
         </div>
+
+        {/* Auth CTA */}
+        {!useAuthStore.getState().isAuthenticated && (
+          <div className="mt-10 text-center text-sm text-muted-foreground">
+            Vous avez un compte ?
+            <Link to="/login" className="ml-1 underline">Se connecter</Link>
+            {' '}•{' '}
+            <Link to="/register" className="underline">Créer un compte</Link>
+          </div>
+        )}
       </main>
     </div>
   );
