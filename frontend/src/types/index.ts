@@ -38,16 +38,28 @@ export interface Token {
   token_type: string;
 }
 
+export interface ProductInfoSummary {
+  id: number;
+  name: string;
+  price: string;
+  image_url: string;
+  description?: string;
+}
+
 // Types pour les essayages virtuels
 export interface TryOnRequest {
   person_image_url: string;
   product_ids: number[];
   session_id?: string;
+  products_info?: ProductInfoSummary[];
+  email?: string;
 }
 
 export interface TryOnResult {
   product_id: number;
   product_name: string;
+  product_description?: string;
+  product_price?: string;
   result_image?: string;
   error?: string;
   status: 'success' | 'failed';

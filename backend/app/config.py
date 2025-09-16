@@ -18,9 +18,17 @@ class Settings(BaseSettings):
     
     # CORS
     frontend_url: str = "http://localhost:3000"
-    
+
     # Brand Selection
     default_brand: Optional[str] = None
+
+    # SMTP / Email
+    smtp_host: Optional[str] = None
+    smtp_port: int = 587
+    smtp_username: Optional[str] = None
+    smtp_password: Optional[str] = None
+    smtp_sender: Optional[str] = None
+    smtp_use_tls: bool = True
     
     # App
     app_name: str = "VTON Demo Professional"

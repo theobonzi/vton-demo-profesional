@@ -8,6 +8,7 @@ A modern virtual try-on application built with React, FastAPI, and Docker. This 
 - **Image Capture**: Upload or capture selfie photos for virtual try-on
 - **Virtual Fitting**: AI-powered virtual try-on with realistic results
 - **Interactive Results**: Like, download, and share virtual fitting results
+- **Email Summary**: Receive a recap email of generated looks with product descriptions
 - **Responsive Design**: Modern UI that works on all devices
 - **Brand Filtering**: Filter products by specific brands via environment variables
 
@@ -143,6 +144,12 @@ uvicorn app.main:app --reload
 | `GEMINI_API_KEY` | Google Gemini API key | Yes |
 | `SECRET_KEY` | JWT secret key | Yes |
 | `DEFAULT_BRAND` | Default brand filter (optional) | No |
+| `SMTP_HOST` | SMTP server host for email summaries | No |
+| `SMTP_PORT` | SMTP server port | No (default 587) |
+| `SMTP_USERNAME` | SMTP username if authentication is required | No |
+| `SMTP_PASSWORD` | SMTP password if authentication is required | No |
+| `SMTP_SENDER` | Email sender address for summaries | No |
+| `SMTP_USE_TLS` | Enable STARTTLS when sending emails | No (default `true`) |
 
 ## 📱 API Endpoints
 

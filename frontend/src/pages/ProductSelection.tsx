@@ -81,6 +81,7 @@ export default function ProductSelection() {
         price: `${p.price.toFixed(2)} €`,
         displayImage: p.image_url,
         apiImage: p.api_image_url || p.image_url,
+        description: p.description || '',
       }));
 
       navigate("/selfie-capture", {

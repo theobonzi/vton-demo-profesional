@@ -2,11 +2,9 @@ import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Camera, Upload } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { cn } from "@/lib/utils";
 
 export default function SelfieCapture() {
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -206,6 +204,11 @@ export default function SelfieCapture() {
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-foreground truncate">{product.name}</p>
                       <p className="text-xs text-text-subtle">{product.price}</p>
+                      {product.description && (
+                        <p className="text-xs text-text-subtle mt-1 line-clamp-2">
+                          {product.description}
+                        </p>
+                      )}
                     </div>
                   </div>
                 ))}
