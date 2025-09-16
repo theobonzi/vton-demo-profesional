@@ -106,4 +106,3 @@ class TryOnService:
             "message": session.get("message", ""),
             "error_message": session.get("error_message"),
         }
-*** End File
