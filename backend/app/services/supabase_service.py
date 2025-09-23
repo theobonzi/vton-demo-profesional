@@ -1,5 +1,6 @@
 import httpx
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
+from urllib.parse import urlparse
 from app.config import settings
 
 
@@ -8,6 +9,117 @@ class SupabaseService:
         self.url = settings.supabase_url
         self.key = settings.supabase_key
         self.client = httpx.AsyncClient(timeout=30.0)
+
+    def _headers(self) -> Dict[str, str]:
+        """Headers communs pour les appels Supabase"""
+        return {
+            'apikey': self.key,
+            'Authorization': f'Bearer {self.key}',
+            'Content-Type': 'application/json'
+        }
+
+    async def _get_signed_url(self, bucket: str, object_path: str, expires_in: int = 3600) -> Optional[str]:
+        """Générer une URL signée pour un fichier Supabase Storage"""
+        if not bucket or not object_path:
+            return None
+
+        try:
+            response = await self.client.post(
+                f"{self.url}/storage/v1/object/sign/{bucket}/{object_path}",
+                headers=self._headers(),
+                json={'expiresIn': expires_in}
+            )
+
+            if response.status_code != 200:
+                print(f"Erreur génération URL signée: {response.status_code} - {response.text}")
+                return None
+
+            data = response.json()
+            signed_url = data.get('signedURL')
+            if not signed_url:
+                return None
+
+            if signed_url.startswith('http'):
+                return signed_url
+
+            if not signed_url.startswith('/'):
+                signed_url = f"/{signed_url}"
+
+            return f"{self.url}/storage/v1{signed_url}"
+
+        except Exception as e:
+            print(f"Erreur lors de la génération de l'URL signée: {e}")
+            return None
+
+    @staticmethod
+    def _extract_bucket_and_path(original_url: str, key: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
+        """Extraire le bucket et le chemin du fichier à partir d'une URL Supabase"""
+        if not original_url:
+            return None, None
+
+        try:
+            parsed = urlparse(original_url)
+            path = parsed.path or ''
+
+            if '/storage/v1/object/' not in path:
+                return None, None
+
+            suffix = path.split('/storage/v1/object/', 1)[1]
+            parts = [part for part in suffix.split('/') if part]
+
+            if not parts:
+                return None, None
+
+            if parts[0] in {'sign', 'public'}:
+                if len(parts) < 2:
+                    return None, None
+                bucket = parts[1]
+                object_parts = parts[2:]
+            else:
+                bucket = parts[0]
+                object_parts = parts[1:]
+
+            if not object_parts and key:
+                object_parts = [key]
+
+            object_path = '/'.join(object_parts) if object_parts else key
+            return bucket, object_path
+
+        except Exception as e:
+            print(f"Erreur extraction bucket/path: {e}")
+            return None, None
+
+    async def _resolve_media_url(self, media: Dict[str, Any]) -> Optional[str]:
+        """Résoudre l'URL exploitable pour un média en base"""
+        original_url = media.get('original_url')
+        if not original_url:
+            return None
+
+        storage_provider = (media.get('storage_provider') or '').lower()
+
+        if storage_provider == 'supabase' or '/storage/v1/object/' in original_url:
+            bucket, object_path = self._extract_bucket_and_path(original_url, media.get('key'))
+            if bucket and object_path:
+                signed_url = await self._get_signed_url(bucket, object_path)
+                if signed_url:
+                    return signed_url
+
+                # Fallback: tenter une URL publique si le bucket est public
+                try:
+                    return f"{self.url}/storage/v1/object/public/{bucket}/{object_path}"
+                except Exception:
+                    pass
+
+        return original_url
+
+    async def _enrich_media_with_urls(self, items: List[Dict[str, Any]]) -> None:
+        """Ajouter des URLs résolues aux médias associés aux items"""
+        for item in items:
+            media_list = item.get('media') or []
+            for media in media_list:
+                resolved_url = await self._resolve_media_url(media)
+                if resolved_url:
+                    media['resolved_url'] = resolved_url
 
     async def get_items(
         self, 
@@ -31,11 +143,7 @@ class SupabaseService:
                 # D'abord récupérer l'ID de la marque
                 brand_response = await self.client.get(
                     f"{self.url}/rest/v1/brands",
-                    headers={
-                        'apikey': self.key,
-                        'Authorization': f'Bearer {self.key}',
-                        'Content-Type': 'application/json'
-                    },
+                    headers=self._headers(),
                     params={'name': f'eq.{brand}', 'select': 'id'}
                 )
                 
@@ -52,11 +160,7 @@ class SupabaseService:
             # Récupérer les items
             response = await self.client.get(
                 f"{self.url}/rest/v1/items",
-                headers={
-                    'apikey': self.key,
-                    'Authorization': f'Bearer {self.key}',
-                    'Content-Type': 'application/json'
-                },
+                headers=self._headers(),
                 params=query_params
             )
 
@@ -65,14 +169,13 @@ class SupabaseService:
 
             items = response.json()
 
+            # Résoudre les URLs des médias pour chaque item
+            await self._enrich_media_with_urls(items)
+
             # Récupérer les marques
             brands_response = await self.client.get(
                 f"{self.url}/rest/v1/brands",
-                headers={
-                    'apikey': self.key,
-                    'Authorization': f'Bearer {self.key}',
-                    'Content-Type': 'application/json'
-                },
+                headers=self._headers(),
                 params={'select': '*', 'order': 'name'}
             )
 
@@ -93,11 +196,7 @@ class SupabaseService:
         try:
             response = await self.client.get(
                 f"{self.url}/rest/v1/brands",
-                headers={
-                    'apikey': self.key,
-                    'Authorization': f'Bearer {self.key}',
-                    'Content-Type': 'application/json'
-                },
+                headers=self._headers(),
                 params={'select': '*', 'order': 'name'}
             )
 
@@ -114,11 +213,7 @@ class SupabaseService:
         try:
             response = await self.client.get(
                 f"{self.url}/rest/v1/items",
-                headers={
-                    'apikey': self.key,
-                    'Authorization': f'Bearer {self.key}',
-                    'Content-Type': 'application/json'
-                },
+                headers=self._headers(),
                 params={
                     'select': '*,brand:brands(id,name,created_at),media:item_media(*)',
                     'id': f'eq.{item_id}'
@@ -127,6 +222,7 @@ class SupabaseService:
 
             if response.status_code == 200:
                 items = response.json()
+                await self._enrich_media_with_urls(items)
                 return items[0] if items else None
             return None
 
@@ -146,8 +242,11 @@ class SupabaseService:
             # Fallback: première image disponible
             main_media = media[0] if media else None
 
-        if main_media and main_media.get('original_url'):
-            return main_media['original_url']
+        if main_media:
+            if main_media.get('resolved_url'):
+                return main_media['resolved_url']
+            if main_media.get('original_url'):
+                return main_media['original_url']
 
         return None
 

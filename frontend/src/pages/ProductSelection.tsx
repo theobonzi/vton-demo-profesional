@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ProductCard } from "@/components/ProductCard";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, Loader2 } from "lucide-react";
@@ -13,6 +13,9 @@ import { Link } from "react-router-dom";
 export default function ProductSelection() {
   const [selectedProducts, setSelectedProducts] = useState<number[]>([]);
   const navigate = useNavigate();
+  const hasLoadedBrands = useRef(false);
+  const hasAppliedDefaultBrand = useRef(false);
+  const lastFetchSignature = useRef<string | null>(null);
   
   // Récupérer la marque par défaut depuis les variables d'environnement
   const defaultBrand = import.meta.env.VITE_DEFAULT_BRAND || '';
@@ -30,39 +33,71 @@ export default function ProductSelection() {
 
   // Charger les données au montage du composant
   useEffect(() => {
-    const loadData = async () => {
+    if (hasLoadedBrands.current) {
+      return;
+    }
+
+    hasLoadedBrands.current = true;
+
+    const loadBrands = async () => {
       try {
-        await Promise.all([
-          fetchBrands(),
-          fetchProducts()
-        ]);
+        await fetchBrands();
       } catch (err) {
-        console.error('Erreur lors du chargement:', err);
+        console.error('Erreur lors du chargement des marques:', err);
       }
     };
 
-    loadData();
-  }, []);
+    loadBrands();
+  }, [fetchBrands]);
 
   // Appliquer la marque par défaut si elle est définie
   useEffect(() => {
-    if (defaultBrand && brands.length > 0) {
-      // Vérifier que la marque existe dans la liste
-      const brandExists = brands.some(brand => brand.name === defaultBrand);
-      if (brandExists) {
-        setFilters({ brand: defaultBrand });
-      } else {
-        console.warn(`Marque "${defaultBrand}" non trouvée dans la liste des marques disponibles`);
-      }
+    if (!defaultBrand || brands.length === 0 || hasAppliedDefaultBrand.current) {
+      return;
     }
-  }, [defaultBrand, brands]);
+
+    const brandExists = brands.some(brand => brand.name === defaultBrand);
+    if (brandExists) {
+      lastFetchSignature.current = null;
+      setFilters({ brand: defaultBrand });
+    } else {
+      console.warn(`Marque "${defaultBrand}" non trouvée dans la liste des marques disponibles`);
+    }
+
+    hasAppliedDefaultBrand.current = true;
+  }, [defaultBrand, brands, setFilters]);
 
   // Recharger les produits quand les filtres changent
   useEffect(() => {
-    if (brands.length > 0) {
-      fetchProducts();
+    if (brands.length === 0) {
+      return;
     }
-  }, [filters.brand, filters.gender]);
+
+    const defaultBrandExists = defaultBrand
+      ? brands.some(brand => brand.name === defaultBrand)
+      : false;
+
+    if (defaultBrandExists && !filters.brand) {
+      return;
+    }
+
+    const signature = JSON.stringify({
+      brand: filters.brand ?? null,
+      category: filters.category ?? null,
+      limit: filters.limit ?? null,
+      skip: filters.skip ?? null,
+    });
+
+    if (lastFetchSignature.current === signature) {
+      return;
+    }
+
+    lastFetchSignature.current = signature;
+
+    fetchProducts().catch((err) => {
+      console.error('Erreur lors du chargement des produits:', err);
+    });
+  }, [brands, defaultBrand, filters.brand, filters.category, filters.limit, filters.skip, fetchProducts]);
 
   const handleProductSelect = (productId: number) => {
     setSelectedProducts(prev =>
@@ -119,7 +154,13 @@ export default function ProductSelection() {
           <div className="flex items-center justify-between gap-4">
             {/* Brand tabs - seulement affichés si aucune marque spécifique n'est choisie */}
             {!defaultBrand && (
-              <Tabs value={filters.brand || "all"} onValueChange={(v) => setFilters({ brand: v === "all" ? undefined : v })}>
+              <Tabs
+                value={filters.brand || "all"}
+                onValueChange={(v) => {
+                  lastFetchSignature.current = null;
+                  setFilters({ brand: v === "all" ? undefined : v });
+                }}
+              >
                 <TabsList>
                   <TabsTrigger value="all">Toutes</TabsTrigger>
                   {brands.map(brand => (
@@ -160,9 +201,9 @@ export default function ProductSelection() {
           </h2>
           <p className="text-text-subtle font-light max-w-lg mx-auto">
             {defaultBrand ? (
-              <>Choisissez les vêtements <strong>{defaultBrand}</strong> que vous souhaitez essayer virtuellement.</>
+              <>Choisissez les vêtements <strong>{defaultBrand}</strong> que vous souhaitez essayer.</>
             ) : (
-              <>Choisissez les vêtements que vous souhaitez essayer virtuellement.</>
+              <>Choisissez les vêtements que vous souhaitez essayer.</>
             )}
             <br />
             Vous pouvez sélectionner plusieurs pièces.
