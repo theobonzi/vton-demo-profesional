@@ -16,7 +16,7 @@ async def debug_config():
     }
 
 
-@router.get("/", response_model=List[dict])
+@router.get("", response_model=List[dict])
 async def get_products(
     brand: Optional[str] = Query(None),
     category: Optional[str] = Query(None),
