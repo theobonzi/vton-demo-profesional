@@ -2,13 +2,16 @@ import httpx
 from typing import List, Dict, Any, Optional, Tuple
 from urllib.parse import urlparse
 from app.config import settings
+from supabase import create_client, Client
 
 
 class SupabaseService:
     def __init__(self):
         self.url = settings.supabase_url
         self.key = settings.supabase_key
-        self.client = httpx.AsyncClient(timeout=30.0)
+        self.http_client = httpx.AsyncClient(timeout=30.0)
+        # Client Supabase pour les opérations table()
+        self.client: Client = create_client(self.url, self.key)
 
     def _headers(self) -> Dict[str, str]:
         """Headers communs pour les appels Supabase"""
@@ -24,7 +27,7 @@ class SupabaseService:
             return None
 
         try:
-            response = await self.client.post(
+            response = await self.http_client.post(
                 f"{self.url}/storage/v1/object/sign/{bucket}/{object_path}",
                 headers=self._headers(),
                 json={'expiresIn': expires_in}
@@ -141,7 +144,7 @@ class SupabaseService:
 
             if brand:
                 # D'abord récupérer l'ID de la marque
-                brand_response = await self.client.get(
+                brand_response = await self.http_client.get(
                     f"{self.url}/rest/v1/brands",
                     headers=self._headers(),
                     params={'name': f'eq.{brand}', 'select': 'id'}
@@ -158,7 +161,7 @@ class SupabaseService:
                 query_params['gender'] = f'eq.{gender}'
 
             # Récupérer les items
-            response = await self.client.get(
+            response = await self.http_client.get(
                 f"{self.url}/rest/v1/items",
                 headers=self._headers(),
                 params=query_params
@@ -173,7 +176,7 @@ class SupabaseService:
             await self._enrich_media_with_urls(items)
 
             # Récupérer les marques
-            brands_response = await self.client.get(
+            brands_response = await self.http_client.get(
                 f"{self.url}/rest/v1/brands",
                 headers=self._headers(),
                 params={'select': '*', 'order': 'name'}
@@ -194,7 +197,7 @@ class SupabaseService:
     async def get_brands(self) -> List[Dict[str, Any]]:
         """Récupérer toutes les marques"""
         try:
-            response = await self.client.get(
+            response = await self.http_client.get(
                 f"{self.url}/rest/v1/brands",
                 headers=self._headers(),
                 params={'select': '*', 'order': 'name'}
@@ -211,7 +214,7 @@ class SupabaseService:
     async def get_item_by_id(self, item_id: str) -> Optional[Dict[str, Any]]:
         """Récupérer un item par son ID"""
         try:
-            response = await self.client.get(
+            response = await self.http_client.get(
                 f"{self.url}/rest/v1/items",
                 headers=self._headers(),
                 params={
@@ -270,4 +273,4 @@ class SupabaseService:
 
     async def close(self):
         """Fermer le client HTTP"""
-        await self.client.aclose()
+        await self.http_client.aclose()

@@ -11,7 +11,7 @@ export default function LoadingScreen() {
   
   const navigate = useNavigate();
   const location = useLocation();
-  const { selectedProducts, productConfigs, personImage } = location.state || {};
+  const { selectedProducts, productConfigs, personImage, useExistingAvatar } = location.state || {};
 
   useEffect(() => {
     if (hasStartedRef.current || isProcessing) {
@@ -33,9 +33,12 @@ export default function LoadingScreen() {
         await new Promise(resolve => setTimeout(resolve, 1000));
 
         setProgress(20);
-        setStatus("Préparation des données...");
+        setStatus(useExistingAvatar 
+          ? "Préparation avec votre mannequin..." 
+          : "Préparation des données..."
+        );
         
-        const products_info = productConfigs?.map(config => ({
+        const products_info = productConfigs?.map((config: any) => ({
           id: parseInt(config.id),
           name: config.name,
           price: config.price,
@@ -46,7 +49,8 @@ export default function LoadingScreen() {
           person_image_url: personImage,
           product_ids: selectedProducts,
           products_info: products_info,
-          session_id: `session_${Date.now()}`
+          session_id: `session_${Date.now()}`,
+          use_existing_avatar: useExistingAvatar || false
         };
 
         setProgress(30);
@@ -55,11 +59,17 @@ export default function LoadingScreen() {
         const tryOnResponse = await createTryOn(tryOnRequest);
 
         setProgress(50);
-        setStatus("Traitement de votre image...");
+        setStatus(useExistingAvatar 
+          ? "Traitement avec votre mannequin..." 
+          : "Traitement de votre image..."
+        );
         await new Promise(resolve => setTimeout(resolve, 1000));
 
         setProgress(70);
-        setStatus("Suppression de l'arrière-plan...");
+        setStatus(useExistingAvatar 
+          ? "Application des vêtements..." 
+          : "Suppression de l'arrière-plan..."
+        );
         await new Promise(resolve => setTimeout(resolve, 1000));
 
         setProgress(90);

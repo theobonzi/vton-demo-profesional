@@ -101,22 +101,70 @@ async def read_users_me(current_user: dict = Depends(get_current_user)):
     }
 
 def get_current_user_optional(authorization: Optional[str] = Header(None)):
-    """Authentification optionnelle pour la démo"""
+    """Authentification optionnelle - supporte tokens Supabase et tokens backend"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
     if not authorization:
+        logger.info("No authorization header provided")
         return None
     
     try:
         # Extraire le token du header Authorization: Bearer <token>
         if authorization.startswith("Bearer "):
             token = authorization.split(" ")[1]
+            logger.info(f"Token extracted, length: {len(token)}")
         else:
+            logger.warning("Authorization header doesn't start with 'Bearer '")
             return None
+        
+        # D'abord, essayer de décoder comme token Supabase (JWT sans vérification de signature pour la démo)
+        try:
+            # Décoder sans vérification pour extraire les claims Supabase
+            from jose import jwt as jose_jwt
+            # Note: En production, vous devriez vérifier la signature avec la clé publique Supabase
+            payload = jose_jwt.get_unverified_claims(token)
+            logger.info(f"Decoded Supabase token claims: {list(payload.keys())}")
             
+            # Si c'est un token Supabase, il aura des claims spécifiques
+            if 'sub' in payload and 'email' in payload:
+                user_id = payload.get('sub')
+                email = payload.get('email')
+                logger.info(f"Supabase user authenticated: {email}")
+                
+                # Créer un objet utilisateur basé sur les claims Supabase
+                return {
+                    "sub": user_id,  # ID Supabase
+                    "id": user_id,   # Pour compatibilité
+                    "email": email,
+                    "username": email.split('@')[0] if email else 'user',
+                    "is_active": True,
+                    "created_at": payload.get('created_at', '2024-01-01T00:00:00Z')
+                }
+        except Exception as e:
+            # Si échec décodage Supabase, essayer token backend
+            logger.info(f"Failed to decode as Supabase token: {e}")
+            pass
+            
+        # Essayer comme token backend traditionnel
         payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
         email: str = payload.get("sub")
         if email and email == DEMO_USER["email"]:
+            logger.info(f"Backend token authenticated: {email}")
             return DEMO_USER
-    except JWTError:
+            
+    except JWTError as e:
+        logger.warning(f"JWT decode error: {e}")
         pass
     
+    logger.warning("Authentication failed")
     return None
+
+
+@router.get("/test")
+async def test_auth(current_user: Optional[dict] = Depends(get_current_user_optional)):
+    """Test endpoint pour vérifier l'authentification"""
+    if current_user:
+        return {"authenticated": True, "user": current_user}
+    else:
+        return {"authenticated": False, "message": "No authentication provided"}

@@ -29,6 +29,34 @@ class AvatarCreationService:
         self.runpod_api_token = settings.runpod_api_token
         self.runpod_preprocessing_endpoint = settings.runpod_preprocessing_endpoint
     
+    def _extract_base64_data(self, data_url: str) -> bytes:
+        """Extraire les données base64 d'une Data URL"""
+        if data_url.startswith('data:'):
+            # Format: data:image/png;base64,iVBORw0K...
+            base64_data = data_url.split(',')[1]
+        else:
+            # Déjà en base64 pur
+            base64_data = data_url
+        
+        return base64.b64decode(base64_data)
+    
+    def generate_signed_url(self, s3_key: str, expires_in: int = 3600) -> str:
+        """Générer une URL signée pour un objet S3"""
+        try:
+            url = self.s3_client.generate_presigned_url(
+                'get_object',
+                Params={'Bucket': self.s3_bucket, 'Key': s3_key},
+                ExpiresIn=expires_in
+            )
+            return url
+        except Exception as e:
+            logger.error(f"Erreur génération URL signée pour {s3_key}: {e}")
+            # Fallback vers URL directe (ne fonctionnera que si bucket public)
+            if settings.s3_custom_domain:
+                return f"https://{settings.s3_custom_domain}/{s3_key}"
+            else:
+                return f"https://{self.s3_bucket}.s3.{settings.aws_region}.amazonaws.com/{s3_key}"
+    
     async def create_avatar(
         self,
         person_image_data: str,
@@ -52,7 +80,7 @@ class AvatarCreationService:
             logger.info(f"Début création avatar - Session: {session_id}, User: {user_id}")
             
             # Stocker la session
-            self.processing_sessions[session_id] = {
+            session_data = {
                 "status": "processing",
                 "user_id": user_id,
                 "label": label,
@@ -60,9 +88,12 @@ class AvatarCreationService:
                 "progress": 0,
                 "current_step": "Initialisation"
             }
+            self.processing_sessions[session_id] = session_data
+            logger.info(f"Session {session_id} créée et stockée en mémoire")
             
             # Démarrer le traitement en arrière-plan
-            asyncio.create_task(self._process_avatar_creation(session_id, person_image_data, user_id, label))
+            task = asyncio.create_task(self._process_avatar_creation(session_id, person_image_data, user_id, label))
+            logger.info(f"Tâche de traitement démarrée pour session {session_id}")
             
             return {
                 "session_id": session_id,
@@ -92,6 +123,7 @@ class AvatarCreationService:
             # Étape 3: Génération des masques via RunPod
             session.update({"progress": 45, "current_step": "Génération des masques via RunPod"})
             mask_images = await self.get_mask(person_image_data)
+            # Wait 2s to ensure RunPod has finalized processing
             
             # Étape 4: Upload des masques sur S3
             session.update({"progress": 65, "current_step": "Upload masques sur S3"})
@@ -145,19 +177,16 @@ class AvatarCreationService:
             
             # Préparation de l'image pour RunPod
             image_data = body_image_data
-            if body_image_data.startswith('data:image'):
-                # Extraire le base64 si c'est un data URL
-                image_data = body_image_data.split(',')[1]
             
             # Payload pour RunPod preprocessing endpoint
             payload = {
                 "input": {
-                    "image": image_data,
-                    "task": "preprocessing",
-                    "output_masks": ["upper", "lower", "overall"]
+                    "person": image_data,
+                    # "parts": ["upper", "lower", "overall"]
                 }
             }
             
+            logger.info(f"API Token RunPod : {'****' + self.runpod_api_token[-4:]}")
             headers = {
                 "Authorization": f"Bearer {self.runpod_api_token}",
                 "Content-Type": "application/json"
@@ -165,14 +194,19 @@ class AvatarCreationService:
             
             logger.info("Envoi requête à RunPod preprocessing endpoint")
             
-            async with httpx.AsyncClient(timeout=180.0) as client:
+            async with httpx.AsyncClient(timeout=600.0) as client:
+                logger.info("Attente réponse de RunPod...")
                 response = await client.post(
                     self.runpod_preprocessing_endpoint,
                     json=payload,
                     headers=headers
                 )
+
+                logger.info("Réponse reçue de RunPod")
+
                 
                 if response.status_code != 200:
+                    logger.error(f"Erreur RunPod: {response.status_code}")
                     raise Exception(f"Erreur RunPod: {response.status_code} - {response.text}")
                 
                 result = response.json()
@@ -181,23 +215,24 @@ class AvatarCreationService:
                 if "output" not in result:
                     raise Exception(f"Réponse RunPod invalide: {result}")
                 
-                output = result["output"]
+                output_mask = result["output"]["output"]["masks"]
+                logger.info(f"Réponse RunPod: {list(output_mask.keys())}")
                 
                 # Extraire les trois masques (adaptation pour le nouveau nom 'overall')
                 mask_images = {}
                 
-                if "mask_upper" in output:
-                    mask_images["upper"] = base64.b64decode(output["mask_upper"])
+                if "upper" in output_mask:
+                    mask_images["upper"] = self._extract_base64_data(output_mask["upper"])
                 else:
                     raise Exception("Masque upper manquant dans la réponse RunPod")
                 
-                if "mask_lower" in output:
-                    mask_images["lower"] = base64.b64decode(output["mask_lower"])
+                if "lower" in output_mask:
+                    mask_images["lower"] = self._extract_base64_data(output_mask["lower"])
                 else:
                     raise Exception("Masque lower manquant dans la réponse RunPod")
                 
-                if "mask_overall" in output:
-                    mask_images["overall"] = base64.b64decode(output["mask_overall"])
+                if "dress" in output_mask:
+                    mask_images["overall"] = self._extract_base64_data(output_mask["dress"])
                 else:
                     raise Exception("Masque overall manquant dans la réponse RunPod")
                 
@@ -211,7 +246,7 @@ class AvatarCreationService:
     async def _upload_body_image_to_s3(self, image_data: str, user_id: str, session_id: str) -> tuple[str, str]:
         """Upload de l'image body sur S3"""
         try:
-            # Convertir base64 en bytes si nécessaire
+            # Déterminer le type MIME et l'extension
             if image_data.startswith('data:image'):
                 # Extraire le type MIME
                 mime_part = image_data.split(',')[0]
@@ -224,13 +259,12 @@ class AvatarCreationService:
                 else:
                     content_type = 'image/jpeg'
                     extension = 'jpg'
-                
-                image_data = image_data.split(',')[1]
             else:
                 content_type = 'image/jpeg'
                 extension = 'jpg'
             
-            image_bytes = base64.b64decode(image_data)
+            # Utiliser la fonction helper pour extraire et décoder les données
+            image_bytes = self._extract_base64_data(image_data)
             
             # Nom du fichier sur S3 (structure organisée par utilisateur)
             s3_key = f"users/{user_id}/bodies/{session_id}/body.{extension}"
@@ -240,8 +274,8 @@ class AvatarCreationService:
                 Bucket=self.s3_bucket,
                 Key=s3_key,
                 Body=image_bytes,
-                ContentType=content_type,
-                ACL='public-read'
+                ContentType=content_type
+                # ACL supprimé - le bucket doit être configuré pour l'accès public via bucket policy
             )
             
             logger.info(f"Image body uploadée: {s3_key}")
@@ -265,8 +299,8 @@ class AvatarCreationService:
                     Bucket=self.s3_bucket,
                     Key=s3_key,
                     Body=image_bytes,
-                    ContentType='image/png',
-                    ACL='public-read'
+                    ContentType='image/png'
+                    # ACL supprimé - le bucket doit être configuré pour l'accès public via bucket policy
                 )
                 
                 mask_s3_keys[mask_type] = s3_key
@@ -281,16 +315,22 @@ class AvatarCreationService:
     async def _create_body_record(self, supabase_service: SupabaseService, user_id: str, label: Optional[str], body_key: str, body_mime: str) -> str:
         """Créer l'enregistrement body dans Supabase"""
         try:
-            # Préparer les données pour l'insertion
+            # Étape 1: Mettre tous les avatars existants de l'utilisateur à is_current=False
+            update_query = supabase_service.client.table("body").update({"is_current": False}).eq("user_id", user_id)
+            update_result = update_query.execute()
+            logger.info(f"Mis à jour {len(update_result.data) if update_result.data else 0} avatars existants à is_current=False")
+            
+            # Étape 2: Préparer les données pour l'insertion du nouveau avatar
             body_data = {
                 "user_id": user_id,
                 "label": label or f"Avatar {datetime.now().strftime('%Y%m%d_%H%M%S')}",
                 "body_bucket": self.s3_bucket,
                 "body_key": body_key,
-                "body_mime": body_mime
+                "body_mime": body_mime,
+                "is_current": True  # Le nouveau avatar devient l'avatar actuel
             }
             
-            # Insérer dans la table body
+            # Étape 3: Insérer le nouveau body
             query = supabase_service.client.table("body").insert(body_data)
             result = query.execute()
             
@@ -338,7 +378,22 @@ class AvatarCreationService:
         session = self.processing_sessions.get(session_id)
         
         if not session:
-            raise ValueError(f"Session {session_id} introuvable")
+            # Si la session n'existe pas, elle pourrait être en cours de traitement
+            # Ne pas automatiquement retourner "completed" - plutôt "processing"
+            logger.warning(f"Session {session_id} introuvable en mémoire - traitement en cours ou session perdue")
+            
+            # Retourner un statut de traitement en cours pour éviter l'affichage prématuré de "réussi"
+            return {
+                "session_id": session_id,
+                "status": "processing",  # Garder en processing jusqu'à confirmation
+                "progress": 20,  # Progress modéré
+                "current_step": "Traitement en cours...",
+                "result": None,
+                "error": None,
+                "created_at": datetime.now().isoformat(),
+                "completed_at": None,
+                "failed_at": None
+            }
         
         return {
             "session_id": session_id,
@@ -357,8 +412,8 @@ class AvatarCreationService:
         try:
             supabase_service = SupabaseService()
             
-            # Récupérer les bodies de l'utilisateur avec leurs masques
-            query = supabase_service.client.table("body").select("*, body_masks(*)").eq("user_id", user_id)
+            # Récupérer seulement l'avatar actuel (is_current=True) avec ses masques
+            query = supabase_service.client.table("body").select("*, body_masks(*)").eq("user_id", user_id).eq("is_current", True)
             result = query.execute()
             
             await supabase_service.close()

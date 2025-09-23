@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     aws_secret_access_key: Optional[str] = None
     aws_region: str = "us-east-1"
     s3_bucket_name: str = "vton-avatars"
+    s3_custom_domain: Optional[str] = None  # Pour CloudFront ou domaine personnalisé
     
     # RunPod Configuration (for mask generation)
     runpod_api_token: Optional[str] = None

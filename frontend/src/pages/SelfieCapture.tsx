@@ -1,66 +1,240 @@
-import { useState, useRef } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Camera, Upload } from "lucide-react";
+import { ArrowLeft, Loader2 } from "lucide-react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
-import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/useAuthStore";
+import { useAvatarStore } from "@/store/useAvatarStore";
+import { AvatarDisplay } from "@/components/avatar/AvatarDisplay";
+import { AvatarCreationProgress } from "@/components/avatar/AvatarCreationProgress";
+import { ImageCapture } from "@/components/capture/ImageCapture";
+import { SelectedProductsSidebar } from "@/components/product/SelectedProductsSidebar";
+import { toast } from "sonner";
 
 export default function SelfieCapture() {
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [isUploadingForAvatar, setIsUploadingForAvatar] = useState(false);
   
   const navigate = useNavigate();
   const location = useLocation();
   const { selectedProducts, productConfigs } = location.state || {};
+  
+  // Stores
+  const { isAuthenticated, isLoading: authLoading } = useAuthStore();
+  const { 
+    hasAvatar, 
+    avatarCheckData, 
+    isChecking, 
+    isCreating, 
+    creationProgress, 
+    creationStep,
+    checkAvatar, 
+    createNewAvatar, 
+    waitForCreation 
+  } = useAvatarStore();
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setCapturedImage(e.target?.result as string);
-      };
-      reader.readAsDataURL(file);
+  // Vérifier l'avatar au montage si authentifié
+  useEffect(() => {
+    if (isAuthenticated && !authLoading) {
+      checkAvatar();
     }
-  };
+  }, [isAuthenticated, authLoading]); // Ne vérifier que quand auth est stable
 
-  const handleCapture = () => {
-    if (videoRef.current && canvasRef.current) {
-      const canvas = canvasRef.current;
-      const video = videoRef.current;
-      const context = canvas.getContext('2d');
-      
-      if (context) {
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        context.drawImage(video, 0, 0);
-        const imageData = canvas.toDataURL('image/jpeg');
-        setCapturedImage(imageData);
+  // Handlers pour avatar existant
+  const handleContinueWithAvatar = () => {
+    console.log("🚀 handleContinueWithAvatar clicked", { 
+      avatarCheckData, 
+      selectedProducts, 
+      productConfigs 
+    });
+    
+    // Vérifications avant navigation
+    if (!selectedProducts || selectedProducts.length === 0) {
+      console.error("❌ No selectedProducts found");
+      toast.error("Aucun produit sélectionné");
+      // navigate("/");
+      return;
+    }
+    
+    if (!productConfigs || productConfigs.length === 0) {
+      console.error("❌ No productConfigs found");
+      toast.error("Configuration produits manquante");
+      // navigate("/");
+      return;
+    }
+    
+    if (!avatarCheckData?.body_url) {
+      console.error("❌ No avatar body_url found", avatarCheckData);
+      toast.error("Avatar introuvable");
+      return;
+    }
+    
+    console.log("✅ All checks passed, navigating to /loading with existing avatar");
+    navigate("/loading", {
+      state: {
+        selectedProducts,
+        productConfigs,
+        personImage: avatarCheckData.body_url,
+        useExistingAvatar: true
       }
-    }
+    });
   };
 
-  const handleContinue = () => {
-    if (capturedImage) {
+  const handleModifyAvatar = () => {
+    setIsUploadingForAvatar(true);
+    setCapturedImage(null);
+  };
+
+  // Handlers pour capture d'image
+  const handleImageCapture = (imageData: string) => {
+    setCapturedImage(imageData);
+  };
+
+  const handleImageUpload = async (imageData: string) => {
+    console.log("📷 handleImageUpload called", { 
+      isUploadingForAvatar, 
+      hasAvatar,
+      selectedProducts, 
+      productConfigs 
+    });
+    
+    // Si l'utilisateur n'a pas d'avatar OU veut modifier son avatar existant
+    if (isUploadingForAvatar || !hasAvatar) {
+      // Créer nouvel avatar
+      try {
+        console.log("🔨 Creating new avatar...");
+        const sessionId = await createNewAvatar({
+          person_image_data: imageData,
+          label: `Avatar ${new Date().toLocaleDateString('fr-FR')}`
+        });
+        
+        if (sessionId) {
+          console.log("⏳ Waiting for avatar creation...");
+          // Attendre completion avec suivi temps réel
+          const success = await waitForCreation(sessionId);
+          if (success) {
+            console.log("✅ Avatar created successfully");
+            setIsUploadingForAvatar(false);
+            setCapturedImage(null);
+            toast.success('Avatar créé avec succès!');
+            
+            // Une fois l'avatar créé, si on a des produits sélectionnés, 
+            // proposer de lancer l'essayage
+            if (selectedProducts && selectedProducts.length > 0 && productConfigs) {
+              toast.success('Avatar créé ! Vous pouvez maintenant lancer l\'essayage virtuel.', {
+                duration: 4000
+              });
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Erreur création avatar:', error);
+        setIsUploadingForAvatar(false);
+        toast.error('Erreur lors de la création de l\'avatar');
+      }
+    } else {
+      // Comportement obsolète - ne devrait plus arriver avec la nouvelle logique
+      console.warn("⚠️ Direct try-on without avatar creation - this should not happen");
+      
+      // Vérifications avant navigation
+      if (!selectedProducts || selectedProducts.length === 0) {
+        console.error("❌ No selectedProducts found for try-on");
+        toast.error("Aucun produit sélectionné");
+        return;
+      }
+      
+      if (!productConfigs || productConfigs.length === 0) {
+        console.error("❌ No productConfigs found for try-on");
+        toast.error("Configuration produits manquante");
+        return;
+      }
+      
       navigate("/loading", {
         state: {
           selectedProducts,
           productConfigs,
-          personImage: capturedImage
+          personImage: imageData,
+          useExistingAvatar: false
         }
       });
     }
   };
 
-  const handleBack = () => {
-    navigate("/");
+  const handleClearImage = () => {
+    setCapturedImage(null);
   };
+
+  const handleBack = () => {
+    // navigate("/");
+  };
+
+  // Affichage conditionnel selon l'état
+  // Attendre que l'authentification soit stable
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto mb-4" />
+          <p className="text-text-subtle">Vérification de la session...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center max-w-md mx-auto px-6">
+          <h1 className="text-2xl font-light tracking-wider text-foreground mb-4">
+            démo
+          </h1>
+          <p className="text-text-subtle text-sm font-light mb-8">
+            Essayage Virtuel
+          </p>
+          <div className="text-center">
+            <p className="text-foreground mb-4">Connexion requise</p>
+            <p className="text-text-subtle text-sm mb-6">
+              Vous devez être connecté pour accéder à cette page.
+            </p>
+            <div className="space-x-4">
+              <Link 
+                to="/login" 
+                className="inline-flex items-center px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
+              >
+                Se connecter
+              </Link>
+              <Link 
+                to="/register" 
+                className="inline-flex items-center px-4 py-2 border border-border rounded-md hover:bg-accent transition-colors"
+              >
+                Créer un compte
+              </Link>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (isChecking && isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto mb-4" />
+          <p className="text-text-subtle">Vérification de votre avatar...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
+      {/* Avatar Creation Progress Overlay */}
+      <AvatarCreationProgress
+        isCreating={isCreating}
+        progress={creationProgress}
+        currentStep={creationStep}
+      />
+
       {/* Header */}
       <header className="border-b border-border">
         <div className="max-w-7xl mx-auto px-6 py-6">
@@ -90,144 +264,62 @@ export default function SelfieCapture() {
         {/* Instructions */}
         <div className="mb-8 text-center">
           <h2 className="text-3xl font-light text-foreground mb-4 tracking-wide">
-            Prenez votre photo
+            {hasAvatar && !capturedImage && !isUploadingForAvatar 
+              ? "Votre mannequin" 
+              : isUploadingForAvatar
+                ? "Nouveau mannequin"
+                : !hasAvatar
+                  ? "Créer votre mannequin"
+                  : "Prenez votre photo"
+            }
           </h2>
           <p className="text-text-subtle font-light max-w-lg mx-auto">
-            Prenez une photo de vous-même ou uploadez une image existante.
-            Assurez-vous d'être bien centré et que votre visage soit visible.
+            {hasAvatar && !capturedImage && !isUploadingForAvatar
+              ? "Utilisez votre mannequin existant ou modifiez-le en uploadant une nouvelle photo."
+              : isUploadingForAvatar
+                ? "Uploadez une nouvelle image pour remplacer votre mannequin actuel."
+                : !hasAvatar
+                  ? "Créez d'abord votre mannequin personnel en uploadant une photo. Il sera utilisé pour tous vos essayages futurs."
+                  : "Prenez une photo de vous-même ou uploadez une image existante. Assurez-vous d'être bien centré et que votre visage soit visible."
+            }
           </p>
         </div>
 
-        {/* Layout vertical divisé */}
+        {/* Layout divisé */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Colonne gauche - Capture d'image */}
-          <div className="bg-card rounded-lg p-6">
-            <h3 className="text-xl font-medium text-foreground mb-6 text-center">
-              Votre photo
-            </h3>
-            
-            {!capturedImage ? (
-              <div className="text-center">
-                {/* Camera Preview */}
-                <div className="w-full max-w-sm mx-auto aspect-[3/4] bg-surface-elevated rounded-lg mb-6 overflow-hidden">
-                  <video
-                    ref={videoRef}
-                    className="w-full h-full object-cover"
-                    autoPlay
-                    muted
-                    playsInline
-                  />
-                </div>
-
-                {/* Hidden canvas for capture */}
-                <canvas ref={canvasRef} className="hidden" />
-
-                {/* Action Buttons */}
-                <div className="flex flex-col sm:flex-row justify-center gap-4">
-                  <Button
-                    onClick={handleCapture}
-                    size="lg"
-                    className="flex items-center gap-2"
-                  >
-                    <Camera className="w-4 h-4" />
-                    Prendre une photo
-                  </Button>
-                  
-                  <Button
-                    variant="outline"
-                    size="lg"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="flex items-center gap-2"
-                  >
-                    <Upload className="w-4 h-4" />
-                    Uploader une image
-                  </Button>
-                </div>
-
-                {/* Hidden file input */}
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={handleFileUpload}
-                  className="hidden"
-                />
-              </div>
-            ) : (
-              <div className="text-center">
-                {/* Captured Image Preview */}
-                <div className="w-full max-w-sm mx-auto aspect-[3/4] bg-surface-elevated rounded-lg mb-6 overflow-hidden">
-                  <img
-                    src={capturedImage}
-                    alt="Captured selfie"
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-
-                {/* Action Buttons */}
-                <div className="flex flex-col sm:flex-row justify-center gap-4">
-                  <Button
-                    variant="outline"
-                    onClick={() => setCapturedImage(null)}
-                    size="lg"
-                  >
-                    Reprendre
-                  </Button>
-                  
-                  <Button
-                    onClick={handleContinue}
-                    size="lg"
-                    className="flex items-center gap-2"
-                    disabled={!capturedImage}
-                  >
-                    Continuer
-                  </Button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Colonne droite - Produits sélectionnés */}
-          <div className="bg-card rounded-lg p-6">
-            <h3 className="text-xl font-medium text-foreground mb-6 text-center">
-              Produits sélectionnés ({productConfigs?.length || 0})
-            </h3>
-            
-            {productConfigs && productConfigs.length > 0 ? (
-              <div className="space-y-4">
-                {productConfigs.map((product: any) => (
-                  <div key={product.id} className="flex items-center gap-4 p-4 bg-surface-elevated rounded-lg">
-                    <div className="w-20 h-24 bg-surface-elevated rounded-lg overflow-hidden flex-shrink-0">
-                      <img
-                        src={product.displayImage}
-                        alt={product.name}
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-foreground truncate">{product.name}</p>
-                      <p className="text-xs text-text-subtle">{product.price}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-12">
-                <p className="text-muted-foreground">Aucun produit sélectionné</p>
-                <Button
-                  variant="outline"
-                  onClick={handleBack}
-                  className="mt-4"
-                >
-                  Retourner aux produits
-                </Button>
-              </div>
-            )}
-          </div>
+          {/* Colonne gauche - Conditionnelle */}
+          {hasAvatar && !capturedImage && !isUploadingForAvatar && isAuthenticated ? (
+            <AvatarDisplay 
+              avatarData={avatarCheckData!}
+              onContinue={handleContinueWithAvatar}
+              onModify={handleModifyAvatar}
+            />
+          ) : (
+            <ImageCapture 
+              capturedImage={capturedImage}
+              onImageCapture={handleImageCapture}
+              onImageUpload={handleImageUpload}
+              onClear={handleClearImage}
+              title={isUploadingForAvatar ? "Nouveau mannequin" : !hasAvatar ? "Créer votre mannequin" : "Votre photo"}
+              subtitle={isUploadingForAvatar 
+                ? "Uploadez une nouvelle image pour mettre à jour votre mannequin."
+                : !hasAvatar 
+                  ? "Uploadez une photo pour créer votre mannequin personnel. Il sera utilisé pour tous vos essayages futurs."
+                  : "Prenez une photo de vous-même ou uploadez une image existante."
+              }
+            />
+          )}
+          
+          {/* Colonne droite */}
+          <SelectedProductsSidebar 
+            productConfigs={productConfigs || []}
+            onBack={handleBack}
+          />
         </div>
       </main>
+      
       {/* Auth CTA */}
-      {!useAuthStore.getState().isAuthenticated && (
+      {!isAuthenticated && (
         <div className="px-6 pb-8 text-center text-sm text-muted-foreground">
           Vous avez un compte ?
           <Link to="/login" className="ml-1 underline">Se connecter</Link>

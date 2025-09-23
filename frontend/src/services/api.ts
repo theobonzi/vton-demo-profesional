@@ -31,14 +31,24 @@ api.interceptors.response.use(
   },
   (error) => {
     if (error.response?.status === 401) {
-      // Token expiré ou invalide
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      window.location.href = '/login';
+      // Ne pas rediriger automatiquement pour les endpoints avatar
+      // Le store avatar gère ces erreurs silencieusement
+      const isAvatarEndpoint = error.config?.url?.includes('/avatar/');
+      
+      if (!isAvatarEndpoint) {
+        // Token expiré ou invalide - rediriger seulement pour les autres endpoints
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        window.location.href = '/login';
+      }
     } else if (error.response?.status >= 500) {
       toast.error('Erreur serveur. Veuillez réessayer plus tard.');
     } else if (error.response?.data?.detail) {
-      toast.error(error.response.data.detail);
+      // Ne pas afficher de toast pour les erreurs avatar 401
+      const isAvatarEndpoint = error.config?.url?.includes('/avatar/');
+      if (!(isAvatarEndpoint && error.response?.status === 401)) {
+        toast.error(error.response.data.detail);
+      }
     } else {
       toast.error('Une erreur est survenue');
     }

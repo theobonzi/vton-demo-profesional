@@ -107,27 +107,38 @@ export default function ProductSelection() {
     );
   };
 
+  const { isAuthenticated } = useAuthStore();
+
   const handleContinue = async () => {
-    if (selectedProducts.length > 0) {
-      const picked = products.filter(p => selectedProducts.includes(p.id));
-
-      // Préparer les configurations des produits
-      const productConfigs = picked.map((p) => ({
-        id: p.id,
-        name: p.name,
-        brand: p.brand,
-        price: `${p.price.toFixed(2)} €`,
-        displayImage: p.image_url,
-        apiImage: p.api_image_url || p.image_url,
-      }));
-
-      navigate("/selfie-capture", {
-        state: { 
-          selectedProducts,
-          productConfigs,
-        }
-      });
+    if (selectedProducts.length === 0) {
+      return;
     }
+
+    // Vérifier l'authentification AVANT de continuer
+    console.log(`isAuthenticated: ${isAuthenticated}`);
+    if (!isAuthenticated) {
+      navigate("/register");
+      return;
+    }
+
+    const picked = products.filter(p => selectedProducts.includes(p.id));
+
+    // Préparer les configurations des produits
+    const productConfigs = picked.map((p) => ({
+      id: p.id,
+      name: p.name,
+      brand: p.brand,
+      price: `${p.price.toFixed(2)} €`,
+      displayImage: p.image_url,
+      apiImage: p.api_image_url || p.image_url,
+    }));
+
+    navigate("/selfie-capture", {
+      state: { 
+        selectedProducts,
+        productConfigs,
+      }
+    });
   };
 
   return (
@@ -282,13 +293,16 @@ export default function ProductSelection() {
           </Button>
         </div>
 
-        {/* Auth CTA */}
-        {!useAuthStore.getState().isAuthenticated && (
+        {/* Auth notice for non-authenticated users */}
+        {!isAuthenticated && (
           <div className="mt-10 text-center text-sm text-muted-foreground">
-            Vous avez un compte ?
-            <Link to="/login" className="ml-1 underline">Se connecter</Link>
-            {' '}•{' '}
-            <Link to="/register" className="underline">Créer un compte</Link>
+            <p className="mb-2">Connexion requise pour continuer</p>
+            <div>
+              Vous avez un compte ?
+              <Link to="/login" className="ml-1 underline">Se connecter</Link>
+              {' '}•{' '}
+              <Link to="/register" className="underline">Créer un compte</Link>
+            </div>
           </div>
         )}
       </main>

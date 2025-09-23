@@ -28,9 +28,9 @@ const getDefaultProducts = (): Product[] => {
 // Récupérer la liste des produits avec filtres
 export async function getProducts(filters: ProductFilters = {}): Promise<Product[]> {
   try {
-    // const response = await api.get('/products/', { params: filters });
-    // return response.data;
-    return getDefaultProducts();
+    const response = await api.get('/products/', { params: filters });
+    return response.data;
+    // return getDefaultProducts();
   } catch (error) {
     console.warn('Supabase échoué, utilisation des images par défaut:', error);
     return getDefaultProducts();
