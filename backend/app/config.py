@@ -1,11 +1,13 @@
 from pydantic_settings import BaseSettings
 from typing import Optional
+import os
+from pathlib import Path
 
 
 class Settings(BaseSettings):
     # Supabase Configuration
-    supabase_url: str = "https://pzqzhljhfistuwxcjzjs.supabase.co"
-    supabase_key: str = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB6cXpobGpoZmlzdHV3eGNqempzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTU3OTM4OTUsImV4cCI6MjA3MTM2OTg5NX0.AyGBeK2rJMjrWxSnMaFZ5C-5myW9r5m2D4a-LIEubpk"
+    supabase_url: str
+    supabase_key: str
     
     # API Keys
     fashn_api_key: str
@@ -36,8 +38,23 @@ class Settings(BaseSettings):
     smtp_use_tls: bool = True
     smtp_use_ssl: bool = False
     
+    # AWS S3 Configuration (for avatar storage)
+    aws_access_key_id: Optional[str] = None
+    aws_secret_access_key: Optional[str] = None
+    aws_region: str = "us-east-1"
+    s3_bucket_name: str = "vton-avatars"
+    
+    # RunPod Configuration (for mask generation)
+    runpod_api_token: Optional[str] = None
+    runpod_preprocessing_endpoint: Optional[str] = None
+    runpod_vto_endpoint: Optional[str] = None
+
     class Config:
-        env_file = ".env"
+        # Chercher le .env dans le dossier backend (2 niveaux au-dessus)
+        backend_root = Path(__file__).parent.parent
+        env_file = backend_root / ".env"
+        env_file_encoding = 'utf-8'
+        case_sensitive = False
 
 
 settings = Settings()
