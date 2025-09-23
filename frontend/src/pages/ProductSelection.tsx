@@ -58,6 +58,7 @@ export default function ProductSelection() {
 
     const brandExists = brands.some(brand => brand.name === defaultBrand);
     if (brandExists) {
+      lastFetchSignature.current = null;
       setFilters({ brand: defaultBrand });
     } else {
       console.warn(`Marque "${defaultBrand}" non trouvée dans la liste des marques disponibles`);
@@ -82,7 +83,9 @@ export default function ProductSelection() {
 
     const signature = JSON.stringify({
       brand: filters.brand ?? null,
-      gender: filters.gender ?? null,
+      category: filters.category ?? null,
+      limit: filters.limit ?? null,
+      skip: filters.skip ?? null,
     });
 
     if (lastFetchSignature.current === signature) {
@@ -94,7 +97,7 @@ export default function ProductSelection() {
     fetchProducts().catch((err) => {
       console.error('Erreur lors du chargement des produits:', err);
     });
-  }, [brands, defaultBrand, filters.brand, filters.gender, fetchProducts]);
+  }, [brands, defaultBrand, filters.brand, filters.category, filters.limit, filters.skip, fetchProducts]);
 
   const handleProductSelect = (productId: number) => {
     setSelectedProducts(prev =>
@@ -151,7 +154,13 @@ export default function ProductSelection() {
           <div className="flex items-center justify-between gap-4">
             {/* Brand tabs - seulement affichés si aucune marque spécifique n'est choisie */}
             {!defaultBrand && (
-              <Tabs value={filters.brand || "all"} onValueChange={(v) => setFilters({ brand: v === "all" ? undefined : v })}>
+              <Tabs
+                value={filters.brand || "all"}
+                onValueChange={(v) => {
+                  lastFetchSignature.current = null;
+                  setFilters({ brand: v === "all" ? undefined : v });
+                }}
+              >
                 <TabsList>
                   <TabsTrigger value="all">Toutes</TabsTrigger>
                   {brands.map(brand => (
