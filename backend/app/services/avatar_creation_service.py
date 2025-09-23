@@ -18,6 +18,7 @@ class AvatarCreationService:
     """Service pour la création d'avatars avec masques via RunPod et stockage Supabase"""
     
     def __init__(self):
+        # Garde sessions en mémoire pour compatibilité, mais utilise aussi Supabase
         self.processing_sessions = {}
         self.s3_client = boto3.client(
             's3',
@@ -39,6 +40,95 @@ class AvatarCreationService:
             base64_data = data_url
         
         return base64.b64decode(base64_data)
+    
+    async def _create_session_record(self, session_id: str, user_id: str, label: Optional[str] = None) -> None:
+        """Créer un enregistrement de session dans Supabase"""
+        try:
+            supabase_service = SupabaseService()
+            session_data = {
+                "session_id": session_id,
+                "user_id": user_id,
+                "status": "processing",
+                "progress": 0,
+                "current_step": "Initialisation",
+                "created_at": datetime.now().isoformat()
+            }
+            
+            query = supabase_service.client.table("avatar_sessions").insert(session_data)
+            result = query.execute()
+            await supabase_service.close()
+            
+            if not result.data:
+                raise Exception("Échec création session dans Supabase")
+            
+            logger.info(f"Session {session_id} créée dans Supabase")
+            
+        except Exception as e:
+            logger.error(f"Erreur création session Supabase: {e}")
+            # Ne pas lever l'erreur - le système peut fonctionner avec sessions mémoire
+    
+    async def _update_session_record(self, session_id: str, updates: dict) -> None:
+        """Mettre à jour un enregistrement de session dans Supabase"""
+        try:
+            supabase_service = SupabaseService()
+            
+            # Ajouter timestamp de mise à jour
+            updates["updated_at"] = datetime.now().isoformat()
+            
+            # Marquer completion/failure timestamps
+            if updates.get("status") == "completed":
+                updates["completed_at"] = datetime.now().isoformat()
+            elif updates.get("status") == "failed":
+                updates["failed_at"] = datetime.now().isoformat()
+            
+            query = supabase_service.client.table("avatar_sessions").update(updates).eq("session_id", session_id)
+            result = query.execute()
+            await supabase_service.close()
+            
+            if result.data:
+                logger.debug(f"Session {session_id} mise à jour dans Supabase")
+            
+        except Exception as e:
+            logger.error(f"Erreur mise à jour session Supabase: {e}")
+            # Continue même si Supabase fail
+    
+    async def _get_session_from_db(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """Récupérer une session depuis Supabase"""
+        try:
+            supabase_service = SupabaseService()
+            
+            query = supabase_service.client.table("avatar_sessions").select("*").eq("session_id", session_id)
+            result = query.execute()
+            await supabase_service.close()
+            
+            if result.data and len(result.data) > 0:
+                session_data = result.data[0]
+                return {
+                    "session_id": session_data["session_id"],
+                    "status": session_data["status"],
+                    "progress": session_data["progress"],
+                    "current_step": session_data["current_step"],
+                    "error": session_data.get("error_message"),
+                    "result": session_data.get("result"),
+                    "created_at": session_data["created_at"],
+                    "completed_at": session_data.get("completed_at"),
+                    "failed_at": session_data.get("failed_at")
+                }
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Erreur récupération session depuis Supabase: {e}")
+            return None
+    
+    async def _update_session(self, session_id: str, updates: dict) -> None:
+        """Mettre à jour session en mémoire ET dans Supabase"""
+        # Mise à jour mémoire
+        if session_id in self.processing_sessions:
+            self.processing_sessions[session_id].update(updates)
+        
+        # Mise à jour Supabase (async, ne bloque pas si ça fail)
+        await self._update_session_record(session_id, updates)
     
     def generate_signed_url(self, s3_key: str, expires_in: int = 3600) -> str:
         """Générer une URL signée pour un objet S3"""
@@ -79,7 +169,7 @@ class AvatarCreationService:
             
             logger.info(f"Début création avatar - Session: {session_id}, User: {user_id}")
             
-            # Stocker la session
+            # Stocker la session en mémoire ET dans Supabase
             session_data = {
                 "status": "processing",
                 "user_id": user_id,
@@ -90,6 +180,9 @@ class AvatarCreationService:
             }
             self.processing_sessions[session_id] = session_data
             logger.info(f"Session {session_id} créée et stockée en mémoire")
+            
+            # Créer aussi dans Supabase pour persistance
+            await self._create_session_record(session_id, user_id, label)
             
             # Démarrer le traitement en arrière-plan
             task = asyncio.create_task(self._process_avatar_creation(session_id, person_image_data, user_id, label))
@@ -113,28 +206,28 @@ class AvatarCreationService:
             supabase_service = SupabaseService()
             
             # Étape 1: Upload de l'image body sur S3
-            session.update({"progress": 15, "current_step": "Upload image body sur S3"})
+            await self._update_session(session_id, {"progress": 15, "current_step": "Upload image body sur S3"})
             body_s3_key, body_mime = await self._upload_body_image_to_s3(person_image_data, user_id, session_id)
             
             # Étape 2: Enregistrement du body dans Supabase
-            session.update({"progress": 25, "current_step": "Enregistrement body dans Supabase"})
+            await self._update_session(session_id, {"progress": 25, "current_step": "Enregistrement body dans Supabase"})
             body_id = await self._create_body_record(supabase_service, user_id, label, body_s3_key, body_mime)
             
             # Étape 3: Génération des masques via RunPod
-            session.update({"progress": 45, "current_step": "Génération des masques via RunPod"})
+            await self._update_session(session_id, {"progress": 45, "current_step": "Génération des masques via RunPod"})
             mask_images = await self.get_mask(person_image_data)
             # Wait 2s to ensure RunPod has finalized processing
             
             # Étape 4: Upload des masques sur S3
-            session.update({"progress": 65, "current_step": "Upload masques sur S3"})
+            await self._update_session(session_id, {"progress": 65, "current_step": "Upload masques sur S3"})
             mask_s3_keys = await self._upload_masks_to_s3(mask_images, user_id, session_id)
             
             # Étape 5: Enregistrement des masques dans Supabase
-            session.update({"progress": 85, "current_step": "Enregistrement masques dans Supabase"})
+            await self._update_session(session_id, {"progress": 85, "current_step": "Enregistrement masques dans Supabase"})
             await self._create_mask_records(supabase_service, body_id, mask_s3_keys)
             
             # Étape 6: Finalisation
-            session.update({"progress": 100, "current_step": "Terminé"})
+            await self._update_session(session_id, {"progress": 100, "current_step": "Terminé"})
             avatar_result = {
                 "body_id": body_id,
                 "user_id": user_id,
@@ -143,7 +236,7 @@ class AvatarCreationService:
                 "created_at": datetime.now().isoformat()
             }
             
-            session.update({
+            await self._update_session(session_id, {
                 "status": "completed",
                 "result": avatar_result,
                 "completed_at": datetime.now().isoformat()
@@ -154,12 +247,12 @@ class AvatarCreationService:
             
         except Exception as e:
             logger.error(f"Erreur lors du traitement avatar {session_id}: {e}")
-            if session_id in self.processing_sessions:
-                self.processing_sessions[session_id].update({
-                    "status": "failed",
-                    "error": str(e),
-                    "failed_at": datetime.now().isoformat()
-                })
+            # Mettre à jour le statut d'erreur dans les deux systèmes
+            await self._update_session(session_id, {
+                "status": "failed",
+                "error_message": str(e),
+                "failed_at": datetime.now().isoformat()
+            })
     
     async def get_mask(self, body_image_data: str) -> Dict[str, bytes]:
         """
@@ -375,36 +468,41 @@ class AvatarCreationService:
     
     async def get_avatar_status(self, session_id: str) -> Dict[str, Any]:
         """Récupérer le statut de création d'un avatar"""
-        session = self.processing_sessions.get(session_id)
         
-        if not session:
-            # Si la session n'existe pas, elle pourrait être en cours de traitement
-            # Ne pas automatiquement retourner "completed" - plutôt "processing"
-            logger.warning(f"Session {session_id} introuvable en mémoire - traitement en cours ou session perdue")
-            
-            # Retourner un statut de traitement en cours pour éviter l'affichage prématuré de "réussi"
+        # D'abord essayer de récupérer depuis Supabase (source fiable)
+        db_session = await self._get_session_from_db(session_id)
+        if db_session:
+            logger.debug(f"Session {session_id} trouvée dans Supabase")
+            return db_session
+        
+        # Fallback: essayer la mémoire locale
+        memory_session = self.processing_sessions.get(session_id)
+        if memory_session:
+            logger.debug(f"Session {session_id} trouvée en mémoire")
             return {
                 "session_id": session_id,
-                "status": "processing",  # Garder en processing jusqu'à confirmation
-                "progress": 20,  # Progress modéré
-                "current_step": "Traitement en cours...",
-                "result": None,
-                "error": None,
-                "created_at": datetime.now().isoformat(),
-                "completed_at": None,
-                "failed_at": None
+                "status": memory_session["status"],
+                "progress": memory_session.get("progress", 0),
+                "current_step": memory_session.get("current_step"),
+                "result": memory_session.get("result"),
+                "error": memory_session.get("error"),
+                "created_at": memory_session["created_at"],
+                "completed_at": memory_session.get("completed_at"),
+                "failed_at": memory_session.get("failed_at")
             }
         
+        # Aucune session trouvée - retourner statut de traitement en cours
+        logger.warning(f"Session {session_id} introuvable dans Supabase ET mémoire")
         return {
             "session_id": session_id,
-            "status": session["status"],
-            "progress": session.get("progress", 0),
-            "current_step": session.get("current_step"),
-            "result": session.get("result"),
-            "error": session.get("error"),
-            "created_at": session["created_at"],
-            "completed_at": session.get("completed_at"),
-            "failed_at": session.get("failed_at")
+            "status": "processing",  # Garder en processing jusqu'à confirmation
+            "progress": 20,  # Progress modéré
+            "current_step": "Traitement en cours...",
+            "result": None,
+            "error": None,
+            "created_at": datetime.now().isoformat(),
+            "completed_at": None,
+            "failed_at": None
         }
     
     async def get_user_avatars(self, user_id: str) -> list:
