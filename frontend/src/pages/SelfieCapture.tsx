@@ -10,6 +10,44 @@ import { ImageCapture } from "@/components/capture/ImageCapture";
 import { SelectedProductsSidebar } from "@/components/product/SelectedProductsSidebar";
 import { toast } from "sonner";
 
+// Fonction pour convertir une URL d'image en base64 via un canvas
+const convertUrlToBase64 = (url: string): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous'; // Tenter de gérer CORS
+    
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        if (!ctx) {
+          reject(new Error('Impossible de créer le contexte canvas'));
+          return;
+        }
+        
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        
+        // Dessiner l'image sur le canvas
+        ctx.drawImage(img, 0, 0);
+        
+        // Convertir en base64
+        const base64 = canvas.toDataURL('image/jpeg', 0.9);
+        resolve(base64);
+      } catch (error) {
+        reject(error);
+      }
+    };
+    
+    img.onerror = () => {
+      reject(new Error('Impossible de charger l\'image depuis l\'URL'));
+    };
+    
+    img.src = url;
+  });
+};
+
 export default function SelfieCapture() {
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [isUploadingForAvatar, setIsUploadingForAvatar] = useState(false);
@@ -40,7 +78,7 @@ export default function SelfieCapture() {
   }, [isAuthenticated, authLoading]); // Ne vérifier que quand auth est stable
 
   // Handlers pour avatar existant
-  const handleContinueWithAvatar = () => {
+  const handleContinueWithAvatar = async () => {
     console.log("🚀 handleContinueWithAvatar clicked", { 
       avatarCheckData, 
       selectedProducts, 
@@ -51,14 +89,12 @@ export default function SelfieCapture() {
     if (!selectedProducts || selectedProducts.length === 0) {
       console.error("❌ No selectedProducts found");
       toast.error("Aucun produit sélectionné");
-      // navigate("/");
       return;
     }
     
     if (!productConfigs || productConfigs.length === 0) {
       console.error("❌ No productConfigs found");
       toast.error("Configuration produits manquante");
-      // navigate("/");
       return;
     }
     
@@ -68,13 +104,26 @@ export default function SelfieCapture() {
       return;
     }
     
-    console.log("✅ All checks passed, navigating to /loading with existing avatar");
-    navigate("/loading", {
+    // Solution simple : passer directement les URLs S3 au backend
+    console.log("✅ Passage des URLs S3 directement au backend");
+    console.log("Debug avatarCheckData.avatar:", avatarCheckData.avatar);
+    
+    // Récupérer les bonnes clés depuis la structure des données
+    const personS3Key = avatarCheckData.avatar?.body_key; // Utiliser body_key au lieu de person_s3_key
+    const maskS3Key = avatarCheckData.avatar?.body_masks?.[0]?.object_key; // Premier mask disponible
+    
+    console.log("Debug S3 keys:", { personS3Key, maskS3Key });
+    
+    navigate("/virtual-fitting", {
       state: {
         selectedProducts,
         productConfigs,
-        personImage: avatarCheckData.body_url,
-        useExistingAvatar: true
+        avatarS3Urls: {
+          body_url: avatarCheckData.body_url,
+          mask_url: avatarCheckData.mask_urls?.upper || avatarCheckData.mask_urls?.overall, 
+          person_s3_key: personS3Key,
+          mask_s3_key: maskS3Key
+        }
       }
     });
   };
@@ -118,11 +167,27 @@ export default function SelfieCapture() {
             toast.success('Avatar créé avec succès!');
             
             // Une fois l'avatar créé, si on a des produits sélectionnés, 
-            // proposer de lancer l'essayage
+            // rediriger vers l'essayage virtuel
             if (selectedProducts && selectedProducts.length > 0 && productConfigs) {
-              toast.success('Avatar créé ! Vous pouvez maintenant lancer l\'essayage virtuel.', {
-                duration: 4000
+              toast.success('Avatar créé ! Redirection vers l\'essayage virtuel.', {
+                duration: 2000
               });
+              
+              // Utiliser directement l'image capturée au lieu de récupérer depuis la base
+              // L'image est déjà en base64 dans imageData
+              console.log("✅ Utilisation de l'image capturée pour l'essayage");
+              
+              // Attendre un peu pour que l'utilisateur voie le message
+              setTimeout(() => {
+                navigate("/virtual-fitting", {
+                  state: {
+                    selectedProducts,
+                    productConfigs,
+                    currentBodyImage: imageData, // Utiliser l'image capturée directement
+                    currentMaskImage: null       // Pas de mask pour une nouvelle création
+                  }
+                });
+              }, 1500);
             }
           }
         }
@@ -148,12 +213,11 @@ export default function SelfieCapture() {
         return;
       }
       
-      navigate("/loading", {
+      navigate("/virtual-fitting", {
         state: {
           selectedProducts,
           productConfigs,
-          personImage: imageData,
-          useExistingAvatar: false
+          avatarData: avatarCheckData
         }
       });
     }

@@ -12,6 +12,27 @@ class SupabaseService:
         self.http_client = httpx.AsyncClient(timeout=30.0)
         # Client Supabase pour les opérations table()
         self.client: Client = create_client(self.url, self.key)
+    
+    def get_user_client(self, jwt_token: str) -> Client:
+        """Créer un client Supabase avec le JWT utilisateur pour RLS"""
+        # Créer le client avec anon key
+        client = create_client(self.url, self.key)
+        
+        # Essayer d'accéder au client PostgREST pour modifier les headers
+        try:
+            if hasattr(client, 'postgrest'):
+                if hasattr(client.postgrest, 'session'):
+                    client.postgrest.session.headers.update({
+                        'Authorization': f'Bearer {jwt_token}'
+                    })
+                elif hasattr(client.postgrest, '_session'):
+                    client.postgrest._session.headers.update({
+                        'Authorization': f'Bearer {jwt_token}'
+                    })
+        except Exception as e:
+            print(f"Impossible de définir les headers: {e}")
+        
+        return client
 
     def _headers(self) -> Dict[str, str]:
         """Headers communs pour les appels Supabase"""

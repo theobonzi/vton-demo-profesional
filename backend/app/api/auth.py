@@ -100,6 +100,48 @@ async def read_users_me(current_user: dict = Depends(get_current_user)):
         "created_at": current_user["created_at"]
     }
 
+def get_user_and_token(authorization: Optional[str] = Header(None)):
+    """Retourne les claims utilisateur ET le token JWT raw pour Supabase RLS"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    if not authorization:
+        logger.info("No authorization header provided")
+        return None, None
+    
+    try:
+        # Extraire le token du header Authorization: Bearer <token>
+        if authorization.startswith("Bearer "):
+            token = authorization.split(" ")[1]
+            logger.info(f"Token extracted, length: {len(token)}")
+        else:
+            logger.warning("Authorization header doesn't start with 'Bearer '")
+            return None, None
+        
+        # D'abord, essayer de décoder comme token Supabase (JWT sans vérification de signature pour la démo)
+        try:
+            # Décoder sans vérification pour extraire les claims Supabase
+            from jose import jwt as jose_jwt
+            # Note: En production, vous devriez vérifier la signature avec la clé publique Supabase
+            payload = jose_jwt.get_unverified_claims(token)
+            logger.info(f"Decoded Supabase token claims: {list(payload.keys())}")
+            
+            # Si c'est un token Supabase, il aura des claims spécifiques
+            if 'sub' in payload and 'email' in payload:
+                user_id = payload.get('sub')
+                email = payload.get('email')
+                logger.info(f"Supabase user authenticated: {email}")
+                return payload, token  # Return both claims and raw token
+                
+        except Exception as e:
+            logger.warning(f"Failed to decode as Supabase token: {str(e)}")
+    
+    except Exception as e:
+        logger.error(f"Token validation error: {str(e)}")
+        return None, None
+    
+    return None, None
+
 def get_current_user_optional(authorization: Optional[str] = Header(None)):
     """Authentification optionnelle - supporte tokens Supabase et tokens backend"""
     import logging

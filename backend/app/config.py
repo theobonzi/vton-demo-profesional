@@ -45,10 +45,16 @@ class Settings(BaseSettings):
     s3_bucket_name: str = "vton-avatars"
     s3_custom_domain: Optional[str] = None  # Pour CloudFront ou domaine personnalisé
     
-    # RunPod Configuration (for mask generation)
+    # RunPod Configuration (for mask generation and VTO inference)
     runpod_api_token: Optional[str] = None
     runpod_preprocessing_endpoint: Optional[str] = None
     runpod_vto_endpoint: Optional[str] = None
+    
+    # Public base URL for webhooks
+    public_base_url: str = "http://localhost:8000"
+    
+    # Webhook security
+    runpod_webhook_secret: Optional[str] = None
 
     class Config:
         # Chercher le .env dans le dossier backend (2 niveaux au-dessus)
