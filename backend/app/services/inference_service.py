@@ -464,38 +464,68 @@ class InferenceService:
             logger.error(f"Erreur lors du traitement du webhook {job_id}: {str(e)}")
 
     async def _handle_successful_webhook(self, task_id: str, webhook_data: Dict[str, Any]):
-        """Traiter un webhook de succès"""
+        """Traiter un webhook de succès avec logging amélioré"""
         try:
-            # Récupérer le résultat de l'image
+            logger.info(f"🎉 Traitement webhook SUCCESS pour tâche {task_id}")
+            logger.info(f"📦 Webhook data: {json.dumps(webhook_data, indent=2)}")
+            
+            # Récupérer le résultat de l'image (formats multiples supportés)
             output = webhook_data.get('output', {})
-            result_image_url = output.get('image_url') or output.get('result_image')
+            result_image_url = (
+                output.get('image_url') or 
+                output.get('result_image') or 
+                output.get('image') or
+                webhook_data.get('image_url')  # Parfois au niveau racine
+            )
+            
+            logger.info(f"🖼️ Image URL extraite: {result_image_url}")
             
             if result_image_url:
-                # Télécharger et sauvegarder l'image résultante vers S3
-                result_s3_key = await self._save_result_to_s3(task_id, result_image_url)
-                
-                # Mettre à jour la tâche
-                await self._update_task_status(task_id, InferenceTaskStatus.COMPLETED, 100.0)
-                
-                output_data = {
-                    "result_s3_key": result_s3_key,
-                    "original_output": output
-                }
-                
-                self.supabase_service.client.table('inference_task').update({
-                    'output': json.dumps(output_data)
-                }).eq('id', task_id).execute()
-                
-                await self._create_task_event(task_id, InferenceTaskEventType.RESULT, {
-                    "status": InferenceTaskStatus.COMPLETED.value,
-                    "result_s3_key": result_s3_key,
-                    "message": "Traitement terminé avec succès"
-                })
+                try:
+                    # Télécharger et sauvegarder l'image résultante vers S3
+                    logger.info(f"⬇️ Téléchargement image depuis: {result_image_url}")
+                    result_s3_key = await self._save_result_to_s3(task_id, result_image_url)
+                    logger.info(f"☁️ Image sauvée S3: {result_s3_key}")
+                    
+                    # Mettre à jour la tâche
+                    await self._update_task_status(task_id, InferenceTaskStatus.COMPLETED, 100.0)
+                    
+                    output_data = {
+                        "result_s3_key": result_s3_key,
+                        "original_output": output,
+                        "processed_at": datetime.now(timezone.utc).isoformat()
+                    }
+                    
+                    # Mise à jour avec output enrichi
+                    update_result = self.supabase_service.client.table('inference_task').update({
+                        'output': json.dumps(output_data)
+                    }).eq('id', task_id).execute()
+                    
+                    if not update_result.data:
+                        logger.error(f"❌ Échec mise à jour output pour tâche {task_id}")
+                    
+                    # Créer l'événement RESULT final
+                    await self._create_task_event(task_id, InferenceTaskEventType.RESULT, {
+                        "status": InferenceTaskStatus.COMPLETED.value,
+                        "result_s3_key": result_s3_key,
+                        "message": "Traitement terminé avec succès",
+                        "progress": 100.0
+                    })
+                    
+                    logger.info(f"✅ Tâche {task_id} complétée avec succès!")
+                    
+                except Exception as s3_error:
+                    logger.error(f"❌ Erreur S3 pour tâche {task_id}: {str(s3_error)}")
+                    await self._mark_task_failed(task_id, f"Erreur sauvegarde S3: {str(s3_error)}")
+                    
             else:
+                logger.warning(f"⚠️ Aucune image trouvée dans webhook pour tâche {task_id}")
+                logger.info(f"🔍 Structure output reçue: {json.dumps(output, indent=2)}")
                 await self._mark_task_failed(task_id, "Aucune image résultante dans la réponse Runpod")
                 
         except Exception as e:
-            logger.error(f"Erreur lors du traitement du succès: {str(e)}")
+            logger.error(f"❌ Erreur lors du traitement du succès pour {task_id}: {str(e)}")
+            logger.error(f"📋 Webhook data qui a causé l'erreur: {json.dumps(webhook_data, indent=2)}")
             await self._mark_task_failed(task_id, f"Erreur post-traitement: {str(e)}")
 
     async def _save_result_to_s3(self, task_id: str, image_url: str) -> str:
