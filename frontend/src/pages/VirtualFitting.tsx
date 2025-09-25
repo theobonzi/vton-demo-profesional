@@ -1,17 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Heart, Download, Share2, X } from "lucide-react";
+import { ArrowLeft, Heart, Download, Share2 } from "lucide-react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/useAuthStore";
 import { toast } from "sonner";
-import inferenceService, { InferenceTaskStatusResponse, InferenceResultsResponse } from "@/services/inferenceService";
-import useInferenceRealtime from "@/hooks/useInferenceRealtime";
-import InferenceProgress from "@/components/InferenceProgress";
-
-// Stable key generator for results
-const getResultKey = (r: any, idx: number) =>
-  r.id ?? r.product_id ?? r.result_signed_url ?? `r-${idx}`;
+import useRunPodJob from "@/hooks/useRunPodJob";
+import { JobStatusResponse } from "@/services/runpodService";
 
 // Helper to format API errors safely for toast display
 function humanizeApiError(e: any): string {
@@ -41,55 +36,138 @@ export default function VirtualFitting() {
   const navigate = useNavigate();
   const location = useLocation();
   
-  // Fix: Proper typing for location state
-  const { selectedProducts, productConfigs, avatarData, currentBodyImage, currentMaskImage, avatarS3Urls } = (location.state || {}) as {
-    selectedProducts?: number[];
+  // Location state for RunPod job
+  const { productConfigs, currentBodyImage, currentMaskImage, avatarS3Urls } = (location.state || {}) as {
     productConfigs?: Array<any>;
-    avatarData?: any;
     currentBodyImage?: string;
     currentMaskImage?: string;
     avatarS3Urls?: { person_s3_key?: string; mask_s3_key?: string };
   };
 
-  // Nouveaux états pour l'inférence VTO
-  const [isStartingInference, setIsStartingInference] = useState(false);
-  const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
-  const [inferenceResults, setInferenceResults] = useState<InferenceResultsResponse | null>(null);
-  const [mode, setMode] = useState<'ready' | 'inference' | 'results'>('ready');
+  // États simplifiés pour le système RunPod
+  const [isStartingJob, setIsStartingJob] = useState(false);
+  const [results, setResults] = useState<any | null>(null);
+  const [mode, setMode] = useState<'ready' | 'processing' | 'results'>('ready');
+  const [forceReset, setForceReset] = useState(0); // Force reset trigger
+
+  // Debug mode changes
+  useEffect(() => {
+    console.log('🎯 Mode changé vers:', mode);
+  }, [mode]);
+
+  // 🔥 FORCE CLEAR all localStorage jobs on mount 
+  useEffect(() => {
+    console.log('🔥 FORCE CLEAR - Nettoyage complet localStorage au montage');
+    
+    // Clear ALL RunPod jobs from localStorage
+    const keys = Object.keys(localStorage).filter(key => key.startsWith('runpod_job_'));
+    keys.forEach(key => {
+      localStorage.removeItem(key);
+      console.log('🗑️ Job supprimé:', key);
+    });
+    
+    // Force component reset
+    setResults(null);
+    setMode('ready');
+    setForceReset(prev => prev + 1);
+  }, []); // Only on mount
 
   // Fix: Protection against state updates after unmount
   const isMountedRef = useRef(true);
-  useEffect(() => () => { isMountedRef.current = false; }, []);
+  useEffect(() => {
+    return () => { 
+      isMountedRef.current = false;
+    };
+  }, []);
 
   // Helper for safe state updates
   const safeSetState = (fn: () => void) => { 
     if (isMountedRef.current) fn(); 
   };
 
-  // Fix: Stable callbacks to prevent realtime hook re-subscription loops
-  const onStatusUpdate = useCallback((newStatus: any) => {
-    if (import.meta.env.DEV) console.log("Status update:", newStatus);
-  }, []);
+  // Hook RunPod simplifié avec callbacks
+  const {
+    jobId,
+    status,
+    isPolling,
+    error: jobError,
+    startJob,
+    reset: resetJob,
+    isCompleted,
+    isFailed
+  } = useRunPodJob({
+    forceReset, // Pass reset trigger
+    onStatusUpdate: useCallback((status: JobStatusResponse) => {
+      console.log("📊 Job status update:", {
+        jobId: status.job_id,
+        status: status.status,
+        hasOutput: !!status.output,
+        hasResultUrl: !!status.result_url,
+        resultUrl: status.result_url
+      });
+    }, []),
 
-  const onComplete = useCallback((resultsFromWS: InferenceResultsResponse) => {
-    if (!isMountedRef.current) return;
-    setInferenceResults(resultsFromWS);
-    setMode("results");
-    setLikedItems(new Set());
-  }, []);
+    onComplete: useCallback((result: JobStatusResponse) => {
+      console.log("🎯 onComplete callback called with:", {
+        jobId: result.job_id,
+        resultUrl: result.result_url,
+        hasOutput: !!result.output,
+        mounted: isMountedRef.current
+      });
+      
+      // 🔥 FORCE UPDATE even if component seems unmounted
+      console.log("🔄 FORCE Setting results regardless of mount status...");
+      try {
+        setResults(result);
+        setMode("results");
+        setLikedItems(new Set());
+        console.log("✅ FORCE Mode switched to results");
+        
+        // Try to trigger a re-render
+        setForceReset(prev => prev + 1);
+        
+      } catch (error) {
+        console.error("❌ Error in onComplete:", error);
+      }
+    }, []),
 
-  const onError = useCallback((error: unknown) => {
-    if (import.meta.env.DEV) console.error("Inference error:", error);
-    toast.error(`Erreur d'inférence: ${String(error)}`);
-  }, []);
-
-  // Hook pour le suivi temps réel
-  const { status, isConnected, error: realtimeError } = useInferenceRealtime({
-    taskId: currentTaskId,
-    onStatusUpdate,
-    onComplete,
-    onError,
+    onError: useCallback((error: string) => {
+      if (!isMountedRef.current) return;
+      if (import.meta.env.DEV) console.error("❌ Job error:", error);
+      toast.error(`Erreur RunPod: ${error}`);
+      setMode("ready"); // Retour au mode ready pour retry
+    }, [])
   });
+
+  // 🚫 DISABLED: Effet de restauration pour éviter les conflits
+  // useEffect(() => {
+  //   console.log('🔍 Effet de restauration:', {
+  //     jobId,
+  //     status: status?.status,
+  //     resultUrl: status?.result_url,
+  //     currentMode: mode,
+  //     isStartingJob
+  //   });
+  //   
+  //   // Ne pas restaurer si on est en train de démarrer un nouveau job
+  //   if (isStartingJob) {
+  //     console.log('⏸️ Skip restauration - nouveau job en cours');
+  //     return;
+  //   }
+  //   
+  //   if (jobId && status) {
+  //     if (status.status === 'COMPLETED' && status.result_url) {
+  //       console.log('🔄 Job restauré en mode résultats - Changement de mode...');
+  //       setResults(status);
+  //       setMode('results');
+  //       setLikedItems(new Set()); // Reset des likes
+  //       console.log('✅ Mode changé vers results');
+  //     } else if (['IN_QUEUE', 'IN_PROGRESS'].includes(status.status)) {
+  //       console.log('🔄 Job restauré en mode traitement');
+  //       setMode('processing');
+  //     }
+  //   }
+  // }, [jobId, status, isStartingJob]);
 
   // Fix: Guarded redirect to prevent update loops
   const hasRedirectedRef = useRef(false);
@@ -106,9 +184,7 @@ export default function VirtualFitting() {
     
     if (import.meta.env.DEV) {
       console.log('VirtualFitting - Données reçues:', {
-        selectedProducts,
-        productConfigs,
-        avatarData,
+        productConfigs: productConfigs?.length || 0,
         currentBodyImage: currentBodyImage ? 'Image présente' : 'Pas d\'image',
         currentMaskImage: currentMaskImage ? 'Mask présent' : 'Pas de mask',
         avatarS3Urls
@@ -116,34 +192,43 @@ export default function VirtualFitting() {
     }
   }, [productConfigs, navigate]);
 
-  // Helper to cancel running task
+  // Helper to cancel running job
   const cancelIfRunning = async () => {
-    if (!currentTaskId) return;
-    try { 
-      // await inferenceService.cancelTask(currentTaskId); // TODO: implement cancel API
+    if (!jobId) return;
+    try {
+      await resetJob();
+      if (import.meta.env.DEV) console.log("🛑 Job tracking stopped for:", jobId);
     } catch (error) {
-      if (import.meta.env.DEV) console.error("Cancel task failed:", error);
+      if (import.meta.env.DEV) console.error("Cancel job failed:", error);
     }
   };
 
   const handleBack = async () => {
-    if (mode === "inference" && currentTaskId) {
-      const confirmLeave = window.confirm("Une inférence est en cours. Voulez-vous l'annuler et revenir ?");
+    if (mode === "processing" && jobId) {
+      const confirmLeave = window.confirm("Un traitement est en cours. Voulez-vous l'annuler et revenir ?");
       if (!confirmLeave) return;
       await cancelIfRunning();
     }
-    navigate("/", { state: { keepSelection: true, selectedProducts, productConfigs }});
+    navigate("/", { state: { keepSelection: true, productConfigs }});
   };
 
-  const startInference = async () => {
+  const startRunPodJob = async () => {
     if (!productConfigs?.length) return toast.error("Aucun produit sélectionné pour l'essayage");
-    if (!isAuthenticated) return toast.error("Vous devez être connecté pour lancer une inférence");
+    if (!isAuthenticated) return toast.error("Vous devez être connecté pour lancer un traitement");
 
     // Declare requestData in outer scope for debugging
     let requestData: any = null;
 
     try {
-      setIsStartingInference(true);
+      setIsStartingJob(true);
+      
+      // 🧹 IMPORTANT: Reset state before starting new job
+      console.log("🔄 Démarrage nouveau job - Reset de l'état...");
+      setResults(null);
+      setMode("ready");
+      
+      // Clear existing job data from localStorage and state
+      resetJob();
 
       if (import.meta.env.DEV) console.log("ProductConfigs reçus:", productConfigs);
 
@@ -174,16 +259,15 @@ export default function VirtualFitting() {
 
       if (import.meta.env.DEV) console.log("📤 Données finales:", requestData);
 
-      const response = await inferenceService.createInferenceTask(requestData);
+      await startJob(requestData);
       
-      // 🔁 Only now switch to "inference" (after successful API response)
-      setMode("inference");
-      setCurrentTaskId(response.task_id);
-      toast.success(`Inférence démarrée pour ${response.cloth_count} vêtement(s)`);
+      // 🔁 Only now switch to "processing" (after successful API response)
+      setMode("processing");
+      toast.success(`Traitement démarré pour ${cloth_image_urls.length} vêtement(s)`);
     } catch (error: any) {
       // 🔍 Debug 422 validation errors in detail
       if (error?.response?.status === 422) {
-        console.groupCollapsed("createInferenceTask 422 payload + error");
+        console.groupCollapsed("startRunPodJob 422 payload + error");
         console.log("payload:", requestData);
         console.log("server error:", error?.response?.data);
         console.groupEnd();
@@ -191,16 +275,16 @@ export default function VirtualFitting() {
       toast.error(humanizeApiError(error)); // ⬅️ use safe formatter
       setMode("ready");
     } finally {
-      setIsStartingInference(false);
+      setIsStartingJob(false);
     }
   };
 
-  const resetInference = async () => {
+  const resetRunPodJob = async () => {
     await cancelIfRunning();
-    setCurrentTaskId(null);
-    setInferenceResults(null);
+    setResults(null);
     setMode("ready");
     setLikedItems(new Set());
+    if (import.meta.env.DEV) console.log("🔄 RunPod job reset completed");
   };
 
   // Fix: Use stable keys for likes
@@ -340,12 +424,12 @@ export default function VirtualFitting() {
                   </div>
                   
                   <Button
-                    onClick={startInference}
-                    disabled={isStartingInference || !isAuthenticated}
+                    onClick={startRunPodJob}
+                    disabled={isStartingJob || !isAuthenticated}
                     className="px-8 py-3 text-lg"
                     size="lg"
                   >
-                    {isStartingInference ? 'Démarrage...' : 'Commencer l\'essayage virtuel'}
+                    {isStartingJob ? 'Démarrage...' : 'Commencer l\'essayage virtuel'}
                   </Button>
                   
                   {!isAuthenticated && (
@@ -374,8 +458,8 @@ export default function VirtualFitting() {
           </div>
         )}
 
-        {/* Mode Inference - Suivi du progress */}
-        {mode === 'inference' && (
+        {/* Mode Processing - Suivi du progress */}
+        {mode === 'processing' && (
           <div className="space-y-8">
             <div className="text-center">
               <h2 className="text-3xl font-light text-foreground mb-4 tracking-wide">
@@ -386,25 +470,37 @@ export default function VirtualFitting() {
               </p>
             </div>
 
-            {/* Progress tracking */}
+            {/* Progress tracking simplifié */}
             <div className="max-w-2xl mx-auto">
               {status && (
                 <div className="bg-card rounded-lg p-6">
-                  <InferenceProgress status={status} />
-                  
-                  {/* Connexion status */}
-                  <div className="mt-4 flex items-center justify-between text-xs text-text-subtle">
-                    <span>
-                      Connexion temps réel: {isConnected ? '✅ Connecté' : '⚠️ Déconnecté'}
-                    </span>
-                    {currentTaskId && (
-                      <span>Task ID: {currentTaskId.slice(0, 8)}...</span>
-                    )}
+                  <div className="text-center space-y-4">
+                    <div className="inline-flex items-center space-x-3">
+                      <div className="w-3 h-3 bg-blue-500 rounded-full animate-pulse"></div>
+                      <span className="font-medium text-foreground">
+                        {status.status === 'IN_QUEUE' && 'En attente...'}
+                        {status.status === 'IN_PROGRESS' && 'Traitement en cours...'}
+                        {status.status === 'COMPLETED' && 'Terminé !'}
+                        {status.status === 'FAILED' && 'Échec'}
+                      </span>
+                    </div>
+                    
+                    <div className="flex items-center justify-center space-x-6 text-xs text-text-subtle">
+                      <span>
+                        Polling: {isPolling ? '🔄 Actif' : '⏸️ Inactif'}
+                      </span>
+                      <span className="font-mono bg-surface-elevated px-2 py-1 rounded">
+                        {status.status}
+                      </span>
+                      {jobId && (
+                        <span>ID: {jobId.slice(0, 8)}...</span>
+                      )}
+                    </div>
                   </div>
 
-                  {realtimeError && (
-                    <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-600">
-                      Erreur Realtime: {realtimeError}
+                  {jobError && (
+                    <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded text-sm text-red-600 text-center">
+                      ❌ {jobError}
                     </div>
                   )}
                 </div>
@@ -414,7 +510,7 @@ export default function VirtualFitting() {
             <div className="text-center">
               <Button
                 variant="outline"
-                onClick={resetInference}
+                onClick={resetRunPodJob}
               >
                 Annuler et recommencer
               </Button>
@@ -432,87 +528,75 @@ export default function VirtualFitting() {
               <p className="text-text-subtle font-light max-w-lg mx-auto">
                 Voici vos résultats d'essayage virtuel. Vous pouvez aimer, télécharger ou partager vos looks favoris.
               </p>
-              {inferenceResults && (
+              {results && (
                 <p className="text-sm text-text-subtle mt-2">
-                  {inferenceResults.successful_results} succès • {inferenceResults.failed_results} échecs
+                  Résultat disponible
                 </p>
               )}
             </div>
 
-            {/* Affichage des résultats */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
-              {inferenceResults?.results.map((result, index) => (
-                <div key={`inference-${index}`} className="bg-card rounded-lg overflow-hidden">
+            {/* Affichage des résultats - centré */}
+            <div className="flex justify-center mb-12">
+              <div className="w-full max-w-sm">
+              {results?.result_url && (
+                <div className="bg-card rounded-lg overflow-hidden">
                   <div className="aspect-[3/4] bg-surface-elevated overflow-hidden">
-                    {result.status === 'success' && result.result_signed_url ? (
-                      <img
-                        src={result.result_signed_url}
-                        alt={`Essayage virtuel ${index + 1}`}
-                        className="w-full h-full object-cover cursor-pointer transition-transform duration-300 hover:scale-105"
-                        onClick={() => setFullscreenImage(result.result_signed_url!)}
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-red-500">
-                        <div className="text-center">
-                          <X className="w-8 h-8 mx-auto mb-2" />
-                          <p className="text-sm">Échec du traitement</p>
-                          {result.error && (
-                            <p className="text-xs mt-1">{result.error}</p>
-                          )}
-                        </div>
-                      </div>
-                    )}
+                    <img
+                      src={results.result_url}
+                      alt="Essayage virtuel"
+                      className="w-full h-full object-cover cursor-pointer transition-transform duration-300 hover:scale-105"
+                      onClick={() => setFullscreenImage(results.result_url!)}
+                    />
                   </div>
 
                   <div className="p-4 pb-2">
                     <h3 className="font-medium text-foreground text-base mb-3">
-                      Vêtement {index + 1} {result.status === 'failed' ? '(Échec)' : ''}
+                      Résultat RunPod
                     </h3>
                     
-                    {result.status === 'success' && (
-                      <div className="flex gap-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleLike(`result-${index}`)}
+                    <div className="flex gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleLike('runpod-result')}
+                        className={cn(
+                          "p-2",
+                          likedItems.has('runpod-result') && "text-red-500"
+                        )}
+                        title={likedItems.has('runpod-result') ? "Retirer des favoris" : "Ajouter aux favoris"}
+                      >
+                        <Heart 
                           className={cn(
-                            "p-2",
-                            likedItems.has(`result-${index}`) && "text-red-500"
-                          )}
-                          title={likedItems.has(`result-${index}`) ? "Retirer des favoris" : "Ajouter aux favoris"}
-                        >
-                          <Heart 
-                            className={cn(
-                              "w-4 h-4",
-                              likedItems.has(`result-${index}`) && "fill-current"
-                            )} 
-                          />
-                        </Button>
+                            "w-4 h-4",
+                            likedItems.has('runpod-result') && "fill-current"
+                          )} 
+                        />
+                      </Button>
 
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleDownload(result.result_signed_url!, `vetement-${index + 1}`)}
-                          className="p-2"
-                          title="Télécharger l'image"
-                        >
-                          <Download className="w-4 h-4" />
-                        </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDownload(results.result_url!, 'runpod-result')}
+                        className="p-2"
+                        title="Télécharger l'image"
+                      >
+                        <Download className="w-4 h-4" />
+                      </Button>
 
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleShare(result.result_signed_url!)}
-                          className="p-2"
-                          title="Partager l'image"
-                        >
-                          <Share2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleShare(results.result_url!)}
+                        className="p-2"
+                        title="Partager l'image"
+                      >
+                        <Share2 className="w-4 h-4" />
+                      </Button>
+                    </div>
                   </div>
                 </div>
-              ))}
+              )}
+              </div>
             </div>
 
             {/* Boutons d'actions */}
@@ -521,12 +605,12 @@ export default function VirtualFitting() {
                 Résumé de votre session
               </h3>
               <p className="text-text-subtle mb-4">
-                Vous avez essayé {inferenceResults?.total_results || 0} vêtement{(inferenceResults?.total_results || 0) > 1 ? 's' : ''} virtuellement
+                Vous avez terminé votre essayage virtuel avec RunPod
               </p>
               <div className="flex justify-center gap-4">
                 <Button
                   variant="outline"
-                  onClick={resetInference}
+                  onClick={resetRunPodJob}
                 >
                   Nouvel essayage
                 </Button>
@@ -544,10 +628,10 @@ export default function VirtualFitting() {
         )}
 
         {/* Session info */}
-        {currentTaskId && (
+        {jobId && (
           <div className="text-center">
             <p className="text-xs text-text-subtle">
-              Task ID: {currentTaskId.slice(0, 8)}...
+              Job ID: {jobId.slice(0, 8)}...
             </p>
           </div>
         )}

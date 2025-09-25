@@ -53,6 +53,24 @@ export interface InferenceTaskEvent {
   created_at: string;
 }
 
+export interface PollingInfo {
+  recommendedInterval: number;
+  maxAttempts: number;
+  timeout: number;
+  shouldStop: boolean;
+  priority: 'normal' | 'high';
+}
+
+export interface PollingManager {
+  taskId: string;
+  attempts: number;
+  startTime: number;
+  currentInterval: number;
+  maxAttempts: number;
+  totalTimeout: number;
+  isActive: boolean;
+}
+
 class InferenceService {
   /**
    * Créer une nouvelle tâche d'inférence VTO
@@ -65,9 +83,19 @@ class InferenceService {
   /**
    * Récupérer le statut d'une tâche d'inférence
    */
-  async getTaskStatus(taskId: string): Promise<InferenceTaskStatusResponse> {
+  async getTaskStatus(taskId: string): Promise<InferenceTaskStatusResponse & { pollingInfo?: PollingInfo }> {
     const response = await api.get(`/inference_tasks/${taskId}/status`);
-    return response.data;
+    
+    // Extraire les headers de contrôle polling depuis le backend
+    const pollingInfo: PollingInfo = {
+      recommendedInterval: parseInt(response.headers['x-poll-interval'] || '5'),
+      maxAttempts: parseInt(response.headers['x-poll-max-attempts'] || '30'),
+      timeout: parseInt(response.headers['x-poll-timeout'] || '300'),
+      shouldStop: response.headers['x-poll-stop'] === 'true',
+      priority: response.headers['x-poll-priority'] || 'normal'
+    };
+    
+    return { ...response.data, pollingInfo };
   }
 
   /**
@@ -201,6 +229,136 @@ class InferenceService {
     } else {
       return this.filesToBase64(files);
     }
+  }
+
+  // Gestion du polling optimisé selon votre brief
+  private activePollers: Map<string, PollingManager> = new Map();
+
+  /**
+   * Polling intelligent avec backoff exponentiel + jitter selon le brief
+   */
+  async startPolling(
+    taskId: string, 
+    onStatusUpdate: (status: InferenceTaskStatusResponse) => void,
+    onComplete: (results: InferenceResultsResponse) => void,
+    onError: (error: string) => void
+  ): Promise<void> {
+    // Arrêter tout polling existant pour cette tâche
+    this.stopPolling(taskId);
+
+    const manager: PollingManager = {
+      taskId,
+      attempts: 0,
+      startTime: Date.now(),
+      currentInterval: 2000, // Start avec 2s
+      maxAttempts: 30,
+      totalTimeout: 300000, // 5 minutes
+      isActive: true
+    };
+
+    this.activePollers.set(taskId, manager);
+
+    const poll = async () => {
+      if (!manager.isActive) return;
+
+      try {
+        manager.attempts++;
+        const statusResponse = await this.getTaskStatus(taskId);
+        
+        // Utiliser les recommandations du backend si disponibles
+        if (statusResponse.pollingInfo) {
+          const info = statusResponse.pollingInfo;
+          manager.maxAttempts = info.maxAttempts;
+          manager.totalTimeout = info.timeout * 1000;
+          
+          if (info.shouldStop) {
+            this.stopPolling(taskId);
+            if (statusResponse.status === 'COMPLETED') {
+              const results = await this.getTaskResults(taskId);
+              onComplete(results);
+            }
+            return;
+          }
+          
+          // Utiliser l'intervalle recommandé avec jitter
+          const baseInterval = info.recommendedInterval * 1000;
+          const jitter = 0.8 + (Math.random() * 0.4); // ±20% jitter
+          manager.currentInterval = Math.round(baseInterval * jitter);
+        }
+
+        onStatusUpdate(statusResponse);
+
+        // Vérifications de fin
+        const elapsed = Date.now() - manager.startTime;
+        const shouldContinue = manager.isActive && 
+                              manager.attempts < manager.maxAttempts &&
+                              elapsed < manager.totalTimeout &&
+                              !['COMPLETED', 'FAILED', 'CANCELLED'].includes(statusResponse.status);
+
+        if (!shouldContinue) {
+          this.stopPolling(taskId);
+          
+          if (statusResponse.status === 'COMPLETED') {
+            const results = await this.getTaskResults(taskId);
+            onComplete(results);
+          } else if (statusResponse.status === 'FAILED') {
+            onError(statusResponse.error_message || 'Tâche échouée');
+          } else if (manager.attempts >= manager.maxAttempts) {
+            onError('Timeout: nombre maximum de tentatives atteint');
+          } else if (elapsed >= manager.totalTimeout) {
+            onError('Timeout: temps maximum dépassé');
+          }
+          return;
+        }
+
+        // Programmer le prochain poll
+        setTimeout(poll, manager.currentInterval);
+
+      } catch (error) {
+        console.error(`Erreur lors du polling pour ${taskId}:`, error);
+        
+        // En cas d'erreur 429 (rate limit), augmenter l'intervalle
+        if (error.response?.status === 429) {
+          const retryAfter = parseInt(error.response.headers['retry-after'] || '5') * 1000;
+          manager.currentInterval = Math.max(manager.currentInterval, retryAfter);
+          setTimeout(poll, manager.currentInterval);
+        } else {
+          this.stopPolling(taskId);
+          onError(`Erreur de polling: ${error.message}`);
+        }
+      }
+    };
+
+    // Démarrer le polling
+    poll();
+  }
+
+  /**
+   * Arrêter le polling pour une tâche
+   */
+  stopPolling(taskId: string): void {
+    const manager = this.activePollers.get(taskId);
+    if (manager) {
+      manager.isActive = false;
+      this.activePollers.delete(taskId);
+    }
+  }
+
+  /**
+   * Arrêter tout le polling (utile lors de la fermeture/navigation)
+   */
+  stopAllPolling(): void {
+    for (const [taskId, manager] of this.activePollers.entries()) {
+      manager.isActive = false;
+    }
+    this.activePollers.clear();
+  }
+
+  /**
+   * Obtenir les informations de polling actives
+   */
+  getActivePollers(): string[] {
+    return Array.from(this.activePollers.keys());
   }
 }
 
