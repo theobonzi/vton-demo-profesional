@@ -64,8 +64,8 @@ class RunPodService {
     onStatusUpdate: (status: JobStatusResponse) => void,
     onComplete: (result: JobStatusResponse) => void,
     onError: (error: string) => void,
-    maxAttempts: number = 30,
-    initialInterval: number = 2000
+    maxAttempts: number = 60, // Double le nombre de tentatives
+    initialInterval: number = 3000 // Augmente l'intervalle initial
   ): Promise<void> {
     let attempts = 0;
     let currentInterval = initialInterval;

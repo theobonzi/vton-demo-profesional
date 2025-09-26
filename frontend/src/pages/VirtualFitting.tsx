@@ -242,7 +242,7 @@ export default function VirtualFitting() {
       requestData = {
         cloth_image_urls,
         steps: 50,
-        guidance_scale: 2.5,
+        guidance_scale: 2,
       };
 
       if (avatarS3Urls?.person_s3_key) {
