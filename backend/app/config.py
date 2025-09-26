@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     # API Keys
     fashn_api_key: str
     gemini_api_key: str
+    gemini_image_model: str = "gemini-2.5-flash-image-preview"
     
     # JWT
     secret_key: str
@@ -59,4 +60,3 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-

@@ -7,9 +7,8 @@ import boto3
 from datetime import datetime
 from app.config import settings
 from app.services.supabase_service import SupabaseService
+from app.services.photo_enhancement_service import PhotoEnhancementService
 import base64
-import io
-from PIL import Image
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +28,7 @@ class AvatarCreationService:
         self.s3_bucket = settings.s3_bucket_name
         self.runpod_api_token = settings.runpod_api_token
         self.runpod_preprocessing_endpoint = settings.runpod_preprocessing_endpoint
+        self.photo_enhancement_service = PhotoEnhancementService()
     
     def _extract_base64_data(self, data_url: str) -> bytes:
         """Extraire les données base64 d'une Data URL"""
@@ -201,32 +201,37 @@ class AvatarCreationService:
     
     async def _process_avatar_creation(self, session_id: str, person_image_data: str, user_id: str, label: Optional[str]) -> None:
         """Traitement complet de création d'avatar avec stockage Supabase"""
+        supabase_service: Optional[SupabaseService] = None
         try:
             session = self.processing_sessions[session_id]
             supabase_service = SupabaseService()
             
-            # Étape 1: Upload de l'image body sur S3
-            await self._update_session(session_id, {"progress": 15, "current_step": "Upload image body sur S3"})
+            # Étape 1: Amélioration de la photo via Gemini
+            await self._update_session(session_id, {"progress": 10, "current_step": "Amélioration de l'image via Gemini"})
+            person_image_data = await self.photo_enhancement_service.enhance_to_studio(person_image_data)
+
+            # Étape 2: Upload de l'image body sur S3
+            await self._update_session(session_id, {"progress": 30, "current_step": "Upload image body sur S3"})
             body_s3_key, body_mime = await self._upload_body_image_to_s3(person_image_data, user_id, session_id)
             
-            # Étape 2: Enregistrement du body dans Supabase
-            await self._update_session(session_id, {"progress": 25, "current_step": "Enregistrement body dans Supabase"})
+            # Étape 3: Enregistrement du body dans Supabase
+            await self._update_session(session_id, {"progress": 45, "current_step": "Enregistrement body dans Supabase"})
             body_id = await self._create_body_record(supabase_service, user_id, label, body_s3_key, body_mime)
             
-            # Étape 3: Génération des masques via RunPod
-            await self._update_session(session_id, {"progress": 45, "current_step": "Génération des masques via RunPod"})
+            # Étape 4: Génération des masques via RunPod
+            await self._update_session(session_id, {"progress": 60, "current_step": "Génération des masques via RunPod"})
             mask_images = await self.get_mask(person_image_data)
             # Wait 2s to ensure RunPod has finalized processing
             
-            # Étape 4: Upload des masques sur S3
-            await self._update_session(session_id, {"progress": 65, "current_step": "Upload masques sur S3"})
+            # Étape 5: Upload des masques sur S3
+            await self._update_session(session_id, {"progress": 80, "current_step": "Upload masques sur S3"})
             mask_s3_keys = await self._upload_masks_to_s3(mask_images, user_id, session_id)
             
-            # Étape 5: Enregistrement des masques dans Supabase
-            await self._update_session(session_id, {"progress": 85, "current_step": "Enregistrement masques dans Supabase"})
+            # Étape 6: Enregistrement des masques dans Supabase
+            await self._update_session(session_id, {"progress": 90, "current_step": "Enregistrement masques dans Supabase"})
             await self._create_mask_records(supabase_service, body_id, mask_s3_keys)
             
-            # Étape 6: Finalisation
+            # Étape 7: Finalisation
             await self._update_session(session_id, {"progress": 100, "current_step": "Terminé"})
             avatar_result = {
                 "body_id": body_id,
@@ -241,8 +246,6 @@ class AvatarCreationService:
                 "result": avatar_result,
                 "completed_at": datetime.now().isoformat()
             })
-            
-            await supabase_service.close()
             logger.info(f"Avatar créé avec succès - Body ID: {body_id}")
             
         except Exception as e:
@@ -253,6 +256,12 @@ class AvatarCreationService:
                 "error_message": str(e),
                 "failed_at": datetime.now().isoformat()
             })
+        finally:
+            if supabase_service:
+                try:
+                    await supabase_service.close()
+                except Exception as close_error:
+                    logger.error(f"Erreur fermeture SupabaseService: {close_error}")
     
     async def get_mask(self, body_image_data: str) -> Dict[str, bytes]:
         """

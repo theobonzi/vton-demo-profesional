@@ -44,6 +44,7 @@ backend/
 | `SUPABASE_KEY` | Supabase API key | Yes | - |
 | `FASHN_API_KEY` | Fashn API key for virtual try-on | Yes | - |
 | `GEMINI_API_KEY` | Google Gemini API key | Yes | - |
+| `GEMINI_IMAGE_MODEL` | Gemini model used for image ops | No | `gemini-2.5-flash-image-preview` |
 | `SECRET_KEY` | JWT secret key | Yes | - |
 | `ALGORITHM` | JWT algorithm | No | HS256 |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | Token expiration time | No | 30 |
@@ -67,6 +68,7 @@ class Settings(BaseSettings):
     # API Keys
     fashn_api_key: str
     gemini_api_key: str
+    gemini_image_model: str = "gemini-2.5-flash-image-preview"
     
     # JWT Configuration
     secret_key: str
@@ -361,8 +363,15 @@ Integrates with Fashn API for virtual try-on processing.
 Integrates with Google Gemini API for AI features.
 
 **Key Methods:**
-- `generate_description()`: Generate product descriptions
-- `analyze_image()`: Analyze uploaded images
+- `generate_try_on_image()`: Compose try-on renders from body and garment assets
+- `enhance_person_image()`: Retouch user photos to white-background studio quality
+
+### PhotoEnhancementService
+
+Wraps `GeminiService` with ready-made prompts for studio-grade preprocessing before RunPod masking.
+
+**Key Methods:**
+- `enhance_to_studio()`: Applies the default white-background studio prompt to incoming photos
 
 ## Error Handling
 
