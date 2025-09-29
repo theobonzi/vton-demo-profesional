@@ -7,11 +7,11 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_STUDIO_PROMPT = (
     "Transform this photo into a professional full-body studio mannequin portrait. "
-    "Reframe tightly so the subject fills the frame vertically from head to feet, with minimal white margin on top, bottom, and sides. "
-    "Adjust the stance into a clean mannequin-like fashion pose: upright posture, balanced shoulders, arms naturally relaxed, legs straight with even weight distribution. "
+    "Reframe tightly so the subject fills the frame vertically from head to feet"
+    "Adjust the stance into a clean mannequin-like fashion pose."
     "Keep the subject’s exact body morphology and proportions intact — do not alter height, width, or shape. "
     "Preserve clothing, textures, colors, skin tone, accessories, and facial expression. "
-    "Replace the background with seamless pure white, evenly lit with soft diffused studio lighting. "
+    "Replace the background with a studio grey/white background, evenly lit with soft diffused studio lighting. "
     "Deliver a sharp, high-resolution image suitable for e-commerce catalogs. "
 )
 

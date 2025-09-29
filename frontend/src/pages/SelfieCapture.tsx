@@ -179,12 +179,12 @@ export default function SelfieCapture() {
               
               // Attendre un peu pour que l'utilisateur voie le message
               setTimeout(() => {
-                navigate("/virtual-fitting", {
+                navigate("/loading", {
                   state: {
                     selectedProducts,
                     productConfigs,
-                    currentBodyImage: imageData, // Utiliser l'image capturée directement
-                    currentMaskImage: null       // Pas de mask pour une nouvelle création
+                    personImage: imageData, // Image pour l'essayage virtuel
+                    useExistingAvatar: true // Utiliser l'avatar qui vient d'être créé
                   }
                 });
               }, 1500);
@@ -213,11 +213,12 @@ export default function SelfieCapture() {
         return;
       }
       
-      navigate("/virtual-fitting", {
+      navigate("/loading", {
         state: {
           selectedProducts,
           productConfigs,
-          avatarData: avatarCheckData
+          personImage: imageData, // Image pour l'essayage virtuel
+          useExistingAvatar: true // Utiliser l'avatar existant
         }
       });
     }

@@ -50,8 +50,8 @@ export async function getTryOnStatus(sessionId: string): Promise<TryOnSessionRes
 
 export async function waitForTryOnCompletion(
   sessionId: string, 
-  maxAttempts: number = 10, 
-  delayMs: number = 2000
+  maxAttempts: number = 30, 
+  delayMs: number = 3000
 ): Promise<TryOnSessionResponse> {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const status = await getTryOnStatus(sessionId);

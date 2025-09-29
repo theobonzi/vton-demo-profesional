@@ -42,7 +42,7 @@ export default function LoadingScreen() {
           id: parseInt(config.id),
           name: config.name,
           price: config.price,
-          image_url: config.displayImage
+          image_url: config.apiImage || config.displayImage  // Utiliser apiImage pour l'inférence
         })) || [];
         
         const tryOnRequest = {
