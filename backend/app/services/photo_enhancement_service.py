@@ -6,11 +6,13 @@ from app.services.gemini_service import GeminiService
 logger = logging.getLogger(__name__)
 
 DEFAULT_STUDIO_PROMPT = (
-    "Retouch the provided person photo into a premium e-commerce studio portrait. Maintain the subject's exact pose, "
-    "body shape, garments, skin tone, accessories, and facial expression. Remove the existing environment and replace "
-    "it with a seamless pure white (#FFFFFF) cyclorama background. Light the scene with soft diffused key and fill lights "
-    "for balanced illumination, no harsh shadows. Deliver a tack-sharp, high-resolution result suitable for product detail "
-    "zooming."
+    "Transform this photo into a professional full-body studio mannequin portrait. "
+    "Reframe tightly so the subject fills the frame vertically from head to feet, with minimal white margin on top, bottom, and sides. "
+    "Adjust the stance into a clean mannequin-like fashion pose: upright posture, balanced shoulders, arms naturally relaxed, legs straight with even weight distribution. "
+    "Keep the subject’s exact body morphology and proportions intact — do not alter height, width, or shape. "
+    "Preserve clothing, textures, colors, skin tone, accessories, and facial expression. "
+    "Replace the background with seamless pure white, evenly lit with soft diffused studio lighting. "
+    "Deliver a sharp, high-resolution image suitable for e-commerce catalogs. "
 )
 
 
