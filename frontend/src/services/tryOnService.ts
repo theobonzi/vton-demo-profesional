@@ -1,4 +1,4 @@
-import api from './api';
+import api from '@/services/api';
 
 export interface ProductInfo {
   id: number;
@@ -10,8 +10,14 @@ export interface ProductInfo {
 export interface TryOnRequest {
   person_image_url: string;
   product_ids: number[];
-  products_info?: ProductInfo[];
+  products_info?: Array<{
+    id: number;
+    name: string;
+    price: string;
+    image_url: string;
+  }>;
   session_id?: string;
+  use_existing_avatar?: boolean;
 }
 
 export interface TryOnResult {
@@ -24,18 +30,16 @@ export interface TryOnResult {
 
 export interface TryOnResponse {
   session_id: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
+  status: string;
   message: string;
-  results?: Record<string, TryOnResult>;
   error_message?: string;
 }
 
 export interface TryOnSessionResponse {
   session_id: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
-  results?: Record<string, TryOnResult>;
+  status: string;
+  results: Record<string, any>;
   message: string;
-  error_message?: string;
 }
 
 export async function createTryOn(request: TryOnRequest): Promise<TryOnResponse> {
@@ -82,4 +86,28 @@ export async function sendSummaryEmail(email: string, sessionId: string | undefi
     items,
   });
   return response.data as { status: string; message: string };
+}
+
+export interface SummaryItem {
+  product_id: number;
+  name: string;
+  price?: string;
+  brand?: string;
+  image_url?: string;
+  result_image_url?: string;
+}
+
+export interface EmailSummaryRequest {
+  email: string;
+  session_id?: string;
+  items: SummaryItem[];
+}
+
+export async function sendTryOnSummary(request: EmailSummaryRequest): Promise<{status: string, message: string}> {
+  console.log('📧 Envoi résumé email:', request);
+  
+  const response = await api.post('/tryon/send-summary', request);
+  console.log('✅ Résumé envoyé:', response.data);
+  
+  return response.data;
 }

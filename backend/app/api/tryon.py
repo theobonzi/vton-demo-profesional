@@ -240,7 +240,7 @@ async def process_product_inference(session_id: str, product_id: int, request: T
                 "cloth": cloth_image,
                 "mask": mask_image,
                 "steps": 50,
-                "guidance_scale": 2.5,
+                "guidance_scale": 2,
                 "return_dict": True
             }
             
@@ -475,36 +475,76 @@ async def send_tryon_summary(payload: EmailSummaryRequest, current_user: Optiona
         if not payload.items:
             raise HTTPException(status_code=400, detail="Aucun produit à inclure dans le résumé")
 
-        # Build a simple HTML summary
+        # Build a beautiful HTML summary with product and result images side by side
         items_html = "".join([
             f"""
-            <tr>
-              <td style='padding:8px;border-bottom:1px solid #eee;'>
-                <div style='display:flex;gap:12px;align-items:center'>
-                  {f"<img src='{i.image_url or i.result_image_url or ''}' alt='{i.name}' width='64' height='64' style='object-fit:cover;border-radius:8px;'/>" if (i.image_url or i.result_image_url) else ''}
-                  <div>
-                    <div style='font-weight:600;color:#111'>{i.name}</div>
-                    {f"<div style='color:#555;font-size:12px'>{i.brand}</div>" if i.brand else ''}
-                    {f"<div style='color:#111;font-size:13px;margin-top:2px'>{i.price}</div>" if i.price else ''}
-                  </div>
+            <div style='margin-bottom:40px;padding:20px;background:#f9fafb;border-radius:12px;border:1px solid #e5e7eb;'>
+              <!-- Product Info Header -->
+              <div style='text-align:center;margin-bottom:20px;'>
+                <h3 style='margin:0;font-size:18px;font-weight:600;color:#111827;'>{i.name}</h3>
+                {f"<p style='margin:5px 0 0 0;font-size:14px;color:#6b7280;font-weight:500;'>{i.brand}</p>" if i.brand else ''}
+                {f"<p style='margin:5px 0 0 0;font-size:16px;color:#059669;font-weight:600;'>{i.price}</p>" if i.price else ''}
+              </div>
+              
+              <!-- Images Side by Side -->
+              <div style='display:flex;gap:20px;justify-content:center;align-items:flex-start;flex-wrap:wrap;'>
+                <!-- Original Product Image -->
+                <div style='text-align:center;flex:1;min-width:200px;max-width:280px;'>
+                  <h4 style='margin:0 0 10px 0;font-size:14px;font-weight:600;color:#374151;text-transform:uppercase;letter-spacing:0.5px;'>Vêtement Original</h4>
+                  {f'<img src="{i.image_url}" alt="Vêtement original - {i.name}" style="width:100%;max-width:280px;height:350px;object-fit:cover;border-radius:8px;box-shadow:0 4px 6px -1px rgba(0,0,0,0.1);border:2px solid #e5e7eb;"/>' if i.image_url else '<div style="width:100%;max-width:280px;height:350px;background:#e5e7eb;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:14px;">Image non disponible</div>'}
                 </div>
-              </td>
-            </tr>
+                
+                <!-- Arrow or Plus Sign -->
+                <div style='display:flex;align-items:center;justify-content:center;margin:120px 10px 0 10px;'>
+                  <div style='background:#3b82f6;color:white;border-radius:50%;width:40px;height:40px;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:bold;'>→</div>
+                </div>
+                
+                <!-- Try-on Result Image -->
+                <div style='text-align:center;flex:1;min-width:200px;max-width:280px;'>
+                  <h4 style='margin:0 0 10px 0;font-size:14px;font-weight:600;color:#374151;text-transform:uppercase;letter-spacing:0.5px;'>Résultat d'Essayage</h4>
+                  {f'<img src="{i.result_image_url}" alt="Résultat essayage - {i.name}" style="width:100%;max-width:280px;height:350px;object-fit:cover;border-radius:8px;box-shadow:0 4px 6px -1px rgba(0,0,0,0.1);border:2px solid #10b981;"/>' if i.result_image_url else '<div style="width:100%;max-width:280px;height:350px;background:#e5e7eb;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:14px;">Résultat non disponible</div>'}
+                </div>
+              </div>
+            </div>
             """
             for i in payload.items
         ])
 
         html = f"""
-        <div style='font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Helvetica,Arial,sans-serif'>
-          <h2 style='font-weight:600'>Résumé de votre essayage virtuel</h2>
-          {f"<div style='color:#555;font-size:12px;margin-bottom:8px'>Session: {payload.session_id}</div>" if payload.session_id else ''}
-          <table style='border-collapse:collapse;width:100%;max-width:640px;background:#fff;border:1px solid #eee;border-radius:8px;overflow:hidden'>
-            <tbody>
+        <!DOCTYPE html>
+        <html lang="fr">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Vos Essayages Virtuels - WearIt</title>
+        </head>
+        <body style='margin:0;padding:0;background-color:#ffffff;'>
+          <div style='font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Helvetica,Arial,sans-serif;max-width:800px;margin:0 auto;padding:20px;'>
+            
+            <!-- Header -->
+            <div style='text-align:center;margin-bottom:40px;padding:30px 20px;background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);border-radius:16px;color:white;'>
+              <h1 style='margin:0;font-size:32px;font-weight:700;letter-spacing:-0.5px;'>✨ Vos Essayages Virtuels</h1>
+              <p style='margin:8px 0 0 0;font-size:16px;opacity:0.9;'>Découvrez vos looks avec WearIt</p>
+              {f"<p style='margin:12px 0 0 0;font-size:14px;opacity:0.8;background:rgba(255,255,255,0.1);padding:8px 16px;border-radius:20px;display:inline-block;'>Session: {payload.session_id}</p>" if payload.session_id else ''}
+            </div>
+            
+            <!-- Items -->
+            <div style='margin-bottom:40px;'>
               {items_html}
-            </tbody>
-          </table>
-          <p style='color:#555;margin-top:16px'>Merci d'utiliser WearIt.</p>
-        </div>
+            </div>
+            
+            <!-- Footer -->
+            <div style='text-align:center;padding:30px 20px;background:#f9fafb;border-radius:12px;border:1px solid #e5e7eb;'>
+              <h3 style='margin:0 0 10px 0;font-size:20px;font-weight:600;color:#111827;'>Merci d'utiliser WearIt ! 🎉</h3>
+              <p style='margin:0 0 15px 0;font-size:14px;color:#6b7280;'>Votre plateforme d'essayage virtuel de nouvelle génération</p>
+              <div style='margin-top:20px;'>
+                <a href="#" style='display:inline-block;background:#3b82f6;color:white;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600;font-size:14px;'>Essayer d'autres vêtements</a>
+              </div>
+            </div>
+            
+          </div>
+        </body>
+        </html>
         """
 
         subject = "Votre résumé d'essayage virtuel"

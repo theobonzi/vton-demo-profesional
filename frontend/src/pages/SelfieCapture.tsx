@@ -327,28 +327,7 @@ export default function SelfieCapture() {
 
       <main className="max-w-7xl mx-auto px-6 py-8">
         {/* Instructions */}
-        <div className="mb-8 text-center">
-          <h2 className="text-3xl font-light text-foreground mb-4 tracking-wide">
-            {hasAvatar && !capturedImage && !isUploadingForAvatar 
-              ? "Votre mannequin" 
-              : isUploadingForAvatar
-                ? "Nouveau mannequin"
-                : !hasAvatar
-                  ? "Créer votre mannequin"
-                  : "Prenez votre photo"
-            }
-          </h2>
-          <p className="text-text-subtle font-light max-w-lg mx-auto">
-            {hasAvatar && !capturedImage && !isUploadingForAvatar
-              ? "Utilisez votre mannequin existant ou modifiez-le en uploadant une nouvelle photo."
-              : isUploadingForAvatar
-                ? "Uploadez une nouvelle image pour remplacer votre mannequin actuel."
-                : !hasAvatar
-                  ? "Créez d'abord votre mannequin personnel en uploadant une photo. Il sera utilisé pour tous vos essayages futurs."
-                  : "Prenez une photo de vous-même ou uploadez une image existante. Assurez-vous d'être bien centré et que votre visage soit visible."
-            }
-          </p>
-        </div>
+
 
         {/* Layout divisé */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
