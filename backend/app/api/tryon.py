@@ -497,7 +497,7 @@ async def send_tryon_summary(payload: EmailSummaryRequest, current_user: Optiona
                 <!-- Arrow or Plus Sign -->
                 <div style='display:flex;align-items:center;justify-content:center;margin:120px 10px 0 10px;'>
                   <div style='background:#3b82f6;color:white;border-radius:50%;width:40px;height:40px;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:bold;'>→</div>
-                </div>
+                  </div>
                 
                 <!-- Try-on Result Image -->
                 <div style='text-align:center;flex:1;min-width:200px;max-width:280px;'>
@@ -542,7 +542,7 @@ async def send_tryon_summary(payload: EmailSummaryRequest, current_user: Optiona
               </div>
             </div>
             
-          </div>
+        </div>
         </body>
         </html>
         """

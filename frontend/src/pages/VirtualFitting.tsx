@@ -352,7 +352,7 @@ export default function VirtualFitting() {
         )}
 
         {/* Résultats */}
-        {results && (
+              {results && (
           <div className="space-y-12">
 
             {/* Affichage des résultats */}

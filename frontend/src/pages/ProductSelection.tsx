@@ -159,38 +159,22 @@ export default function ProductSelection() {
                 )}
               </p>
             </div>
-          </div>
-
-          {/* Second row with filters */}
-          <div className="flex items-center justify-between gap-4">
-            {/* Brand tabs - seulement affichés si aucune marque spécifique n'est choisie */}
-            {!defaultBrand && (
-              <Tabs
-                value={filters.brand || "all"}
-                onValueChange={(v) => {
-                  lastFetchSignature.current = null;
-                  setFilters({ brand: v === "all" ? undefined : v });
-                }}
-              >
-                <TabsList>
-                  <TabsTrigger value="all">Toutes</TabsTrigger>
-                  {brands.map(brand => (
-                    <TabsTrigger key={brand.id} value={brand.name}>
-                      {brand.name}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-              </Tabs>
-            )}
-
-            {/* Si une marque spécifique est choisie, afficher juste le nom de la marque */}
-            {defaultBrand && (
-              <div className="flex items-center gap-2 px-3 py-2 bg-primary/10 rounded-md">
-                <span className="text-sm font-medium text-primary">{defaultBrand}</span>
-              </div>
-            )}
-
-            {/* Gender toggle group */}
+            
+            {/* Instructions au centre */}
+            <div className="text-center">
+              <h2 className="text-2xl font-light text-foreground tracking-wider mb-1">
+                Sélectionnez vos pièces
+              </h2>
+              <p className="text-text-subtle text-sm font-light">
+                {defaultBrand ? (
+                  <>Choisissez les vêtements <strong>{defaultBrand}</strong> que vous souhaitez essayer.</>
+                ) : (
+                  <>Choisissez les vêtements que vous souhaitez essayer.</>
+                )}
+              </p>
+            </div>
+            
+            {/* Gender toggle group - même ligne que le titre */}
             <ToggleGroup 
               type="single" 
               value={filters.gender || "all"} 
@@ -201,25 +185,37 @@ export default function ProductSelection() {
               <ToggleGroupItem value="men" aria-label="Homme">Homme</ToggleGroupItem>
             </ToggleGroup>
           </div>
+
+          {/* Second row with filters */}
+          <div className="flex items-center justify-between gap-4">
+            {/* Brand tabs - seulement affichés si aucune marque spécifique n'est choisie */}
+            <div className="flex-1">
+              {!defaultBrand && (
+                <Tabs
+                  value={filters.brand || "all"}
+                  onValueChange={(v) => {
+                    lastFetchSignature.current = null;
+                    setFilters({ brand: v === "all" ? undefined : v });
+                  }}
+                >
+                  <TabsList>
+                    <TabsTrigger value="all">Toutes</TabsTrigger>
+                    {brands.map(brand => (
+                      <TabsTrigger key={brand.id} value={brand.name}>
+                        {brand.name}
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+                </Tabs>
+              )}
+            </div>
+
+
+          </div>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-12">
-        {/* Instructions */}
-        <div className="mb-12 text-center">
-          <h2 className="text-3xl font-light text-foreground mb-4 tracking-wide">
-            Sélectionnez vos pièces
-          </h2>
-          <p className="text-text-subtle font-light max-w-lg mx-auto">
-            {defaultBrand ? (
-              <>Choisissez les vêtements <strong>{defaultBrand}</strong> que vous souhaitez essayer.</>
-            ) : (
-              <>Choisissez les vêtements que vous souhaitez essayer.</>
-            )}
-            <br />
-            Vous pouvez sélectionner plusieurs pièces.
-          </p>
-        </div>
 
         {/* Loading state */}
         {loading && (
