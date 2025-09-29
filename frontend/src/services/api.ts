@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 // Configuration de base d'Axios
 const api: AxiosInstance = axios.create({
   baseURL: '/api/v1',
-  timeout: 120000,
+  timeout: 120000, // 2 minutes au lieu de 30 secondes
   headers: {
     'Content-Type': 'application/json',
   },

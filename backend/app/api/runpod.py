@@ -21,20 +21,17 @@ logger = logging.getLogger(__name__)
 
 # Schémas Pydantic
 class RunJobRequest(BaseModel):
-    """Demande de création de job RunPod"""
-    # Images (choix entre URLs ou base64)
+    """Demande de création de job RunPod - Simplifié"""
+    # Images de vêtements (obligatoire)
     cloth_image_urls: Optional[List[str]] = Field(None, description="URLs des vêtements")
     cloth_images: Optional[List[str]] = Field(None, description="Images base64 des vêtements")
     
-    # Avatar (optionnel - récupéré de la DB si non fourni)
-    person_image_data: Optional[str] = Field(None, description="Image personne base64")
-    mask_image_data: Optional[str] = Field(None, description="Masque base64")
-    person_s3_key: Optional[str] = Field(None, description="Clé S3 personne")
-    mask_s3_key: Optional[str] = Field(None, description="Clé S3 masque")
+    # Avatar SUPPRIMÉ - toujours récupéré depuis la DB utilisateur avec masque overall
+    # person_image_data, mask_image_data, person_s3_key, mask_s3_key ne sont plus utilisés
     
     # Paramètres
     steps: int = Field(default=50, ge=1, le=100)
-    guidance_scale: float = Field(default=2.5, ge=0.1, le=20.0)
+    guidance_scale: float = Field(default=3.5, ge=0.1, le=20.0)
 
 class RunJobResponse(BaseModel):
     """Réponse de création de job"""
@@ -199,20 +196,8 @@ async def _prepare_runpod_input(request: RunJobRequest, user_id: str) -> Dict[st
     if not cloth_images:
         raise ValueError("Impossible de traiter les images de vêtements")
     
-    # 2. Traiter l'avatar
-    person_image = None
-    mask_image = None
-    
-    if request.person_image_data:
-        person_image = request.person_image_data
-        mask_image = request.mask_image_data
-    elif request.person_s3_key:
-        person_image = await _s3_to_base64(request.person_s3_key)
-        if request.mask_s3_key:
-            mask_image = await _s3_to_base64(request.mask_s3_key)
-    else:
-        # Récupérer l'avatar courant de l'utilisateur
-        person_image, mask_image = await _get_current_user_avatar(user_id)
+    # 2. Traiter l'avatar - TOUJOURS utiliser l'avatar courant avec masque overall
+    person_image, mask_image = await _get_current_user_avatar(user_id, "dresses")
     
     if not person_image:
         raise ValueError("Aucune image de personne disponible")
@@ -249,29 +234,57 @@ async def _s3_to_base64(s3_key: str) -> str:
         logger.error(f"❌ Erreur S3 → base64 pour {s3_key}: {e}")
         raise
 
-async def _get_current_user_avatar(user_id: str) -> tuple[str, str]:
-    """Récupérer l'avatar courant de l'utilisateur"""
+async def _get_current_user_avatar(user_id: str, cloth_category: str = "tops") -> tuple[str, str]:
+    """Récupérer l'avatar courant de l'utilisateur avec le bon masque selon la catégorie"""
     try:
         from app.services.supabase_service import SupabaseService
         supabase_service = SupabaseService()
         
-        result = supabase_service.client.table('body_data').select('*').eq('user_id', user_id).eq('is_current', True).execute()
+        # Utiliser le nouveau schéma avec les masques séparés
+        result = supabase_service.client.table('body').select('*, body_masks(*)').eq('user_id', user_id).eq('is_current', True).execute()
         
         if not result.data:
             raise ValueError("Aucun avatar courant trouvé")
         
         avatar = result.data[0]
-        person_s3_key = avatar.get('person_image_s3_key')
-        mask_s3_key = avatar.get('mask_s3_key')
+        person_s3_key = avatar.get('body_key')  # Clé S3 de l'image personne
+        
+        # Déterminer le type de masque nécessaire selon la catégorie
+        mask_kind = _get_mask_type_for_category(cloth_category)
+        logger.info(f"🎯 Catégorie vêtement: {cloth_category} → Masque requis: {mask_kind}")
+        
+        # Chercher le masque correspondant
+        mask_s3_key = None
+        if avatar.get('body_masks'):
+            for mask in avatar['body_masks']:
+                if mask['kind'] == mask_kind:
+                    mask_s3_key = mask['object_key']
+                    break
+        
+        if not mask_s3_key:
+            logger.warning(f"⚠️ Masque {mask_kind} non trouvé, fallback vers 'upper'")
+            # Fallback vers upper si le masque spécifique n'est pas trouvé
+            for mask in avatar.get('body_masks', []):
+                if mask['kind'] == 'upper':
+                    mask_s3_key = mask['object_key']
+                    break
         
         person_image = await _s3_to_base64(person_s3_key) if person_s3_key else None
         mask_image = await _s3_to_base64(mask_s3_key) if mask_s3_key else None
         
+        logger.info(f"✅ Avatar récupéré avec masque {mask_kind}: person={bool(person_image)}, mask={bool(mask_image)}")
+        logger.info(f"🔧 CONFIRMATION: Masque '{mask_kind}' sera utilisé pour l'inférence")
         return person_image, mask_image
         
     except Exception as e:
         logger.error(f"❌ Erreur récupération avatar utilisateur {user_id}: {e}")
         raise
+
+def _get_mask_type_for_category(category: str) -> str:
+    """Déterminer le type de masque nécessaire selon la catégorie de vêtement"""
+    # FORCE: Toujours utiliser le masque 'overall' pour tous les types de vêtements
+    logger.info(f"🔧 FORCÉ: Utilisation du masque 'overall' pour la catégorie '{category}'")
+    return 'overall'
 
 async def _persist_result_if_needed(job_id: str, output: Dict[str, Any]) -> Optional[str]:
     """Persister le résultat vers S3 et retourner l'URL"""

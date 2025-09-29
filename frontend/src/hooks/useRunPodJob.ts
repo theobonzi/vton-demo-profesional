@@ -21,8 +21,8 @@ export function useRunPodJob(options: UseRunPodJobOptions = {}) {
     onStatusUpdate,
     onComplete,
     onError,
-    maxAttempts = 30,
-    initialInterval = 2000
+    maxAttempts = 60, // Correspond aux nouveaux paramètres du service
+    initialInterval = 3000
   } = options;
 
   const [state, setState] = useState<RunPodJobState>({
