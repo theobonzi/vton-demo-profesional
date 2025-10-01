@@ -190,25 +190,25 @@ export default function ProductSelection() {
           <div className="flex items-center justify-between gap-4">
             {/* Brand tabs - seulement affichés si aucune marque spécifique n'est choisie */}
             <div className="flex-1">
-              {!defaultBrand && (
-                <Tabs
-                  value={filters.brand || "all"}
-                  onValueChange={(v) => {
-                    lastFetchSignature.current = null;
-                    setFilters({ brand: v === "all" ? undefined : v });
-                  }}
-                >
-                  <TabsList>
-                    <TabsTrigger value="all">Toutes</TabsTrigger>
-                    {brands.map(brand => (
-                      <TabsTrigger key={brand.id} value={brand.name}>
-                        {brand.name}
-                      </TabsTrigger>
-                    ))}
-                  </TabsList>
-                </Tabs>
-              )}
-            </div>
+            {!defaultBrand && (
+              <Tabs
+                value={filters.brand || "all"}
+                onValueChange={(v) => {
+                  lastFetchSignature.current = null;
+                  setFilters({ brand: v === "all" ? undefined : v });
+                }}
+              >
+                <TabsList>
+                  <TabsTrigger value="all">Toutes</TabsTrigger>
+                  {brands.map(brand => (
+                    <TabsTrigger key={brand.id} value={brand.name}>
+                      {brand.name}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </Tabs>
+            )}
+              </div>
 
 
           </div>
